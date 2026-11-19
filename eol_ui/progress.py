@@ -78,6 +78,7 @@ _TEMPERATURE_VERIFIED = re.compile(rf"Temperature verified: {_NUMBER}C")
 _ROBOT_INITIAL = re.compile(rf"Moving robot to initial position: {_NUMBER}um")
 _ROBOT_MOVED = re.compile(rf"Moved to {_NUMBER}um")
 _HARDWARE_STATUS = re.compile(r"Hardware status: (\{.*\})\s*$")
+_HARDWARE_DISCONNECTED = re.compile(r"^Hardware disconnected$")
 _TEARDOWN_COMPLETE = re.compile(r"^Test teardown completed?$")
 
 
@@ -158,6 +159,7 @@ class ProgressTracker:
             (_ROBOT_INITIAL, self._on_robot_position),
             (_ROBOT_MOVED, self._on_robot_position),
             (_HARDWARE_STATUS, self._on_hardware_status),
+            (_HARDWARE_DISCONNECTED, self._on_hardware_disconnected),
             (_TEARDOWN_COMPLETE, self._on_teardown_complete),
         )
 
@@ -263,6 +265,9 @@ class ProgressTracker:
             return False
         devices = {str(name): value for name, value in raw.items() if isinstance(value, bool)}
         return self._apply(devices=MappingProxyType(devices))
+
+    def _on_hardware_disconnected(self, _: "re.Match[str]") -> bool:
+        return self._apply(devices=MappingProxyType({}))
 
     def _on_teardown_complete(self, _: "re.Match[str]") -> bool:
         return self._apply(power_on=False)

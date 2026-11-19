@@ -92,13 +92,15 @@ def test_progress_parser_recorded_log():
     assert power[-1] == (40.0, 42.0, False)
     assert distinct(s.power_on for s in states) == [None, True, False]
 
-    assert dict(final.devices) == {
+    all_connected = {
         "robot": True,
         "mcu": True,
         "power": True,
         "loadcell": True,
         "digital_io": True,
     }
+    assert any(dict(s.devices) == all_connected for s in states)
+    assert dict(final.devices) == {}
     assert final.elapsed == 5.39
     assert final.activity == "완료"
 
@@ -191,3 +193,14 @@ def test_progress_parser_failed_teardown_keeps_confirmed_power_off():
     tracker.on_step_complete("teardown", False, 0.2)
 
     assert tracker.snapshot().power_on is False
+
+
+def test_progress_devices_unknown_after_hardware_disconnected():
+    tracker = ProgressTracker(FakeClock())
+
+    tracker.on_log("Hardware status: {'robot': True, 'mcu': False}")
+    assert dict(tracker.snapshot().devices) == {"robot": True, "mcu": False}
+
+    assert tracker.on_log("Hardware disconnected") is True
+    assert dict(tracker.snapshot().devices) == {}
+    assert tracker.on_log("Hardware disconnected") is False
