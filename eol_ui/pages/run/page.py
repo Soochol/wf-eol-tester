@@ -35,6 +35,10 @@ NO_PROFILES_NOTICE = "테스트 프로파일이 없어 시작할 수 없습니�
 _TICK_MS = 500
 
 
+def missing_profile_notice(name: str) -> str:
+    return f"프로파일 '{name}' 파일이 없어 시작할 수 없습니다. 다른 프로파일을 선택하세요."
+
+
 class RunPage(QWidget):
     profile_changed = Signal(str)
     running_changed = Signal(bool)
@@ -46,6 +50,7 @@ class RunPage(QWidget):
         self._last_rows = 0
         self._hardware_busy = False
         self._last_running = False
+        self._missing_profile: Optional[str] = None
 
         self._serial = QLineEdit()
         self._serial.setObjectName("serial-input")
@@ -79,7 +84,7 @@ class RunPage(QWidget):
         self.refresh_profiles()
         self.set_applied_count(0)
         self._serial.textChanged.connect(self._sync_buttons)
-        self._profile.activated.connect(lambda _: self.profile_changed.emit(self._profile.currentText()))
+        self._profile.activated.connect(self._on_profile_activated)
         self._start.clicked.connect(self._on_start_clicked)
         self._abort.clicked.connect(lambda: self.request_abort())
         runner.log.connect(self._log.append)
@@ -123,10 +128,16 @@ class RunPage(QWidget):
         current = self._profile.currentText()
         self._profile.clear()
         self._profile.addItems(eol_config.list_test_profiles())
+        if self._missing_profile and self._profile.findText(self._missing_profile) < 0:
+            self._profile.insertItem(0, self._missing_profile)
+            current = self._missing_profile
+        else:
+            self._clear_missing()
         if current:
             self._profile.setCurrentText(current)
-        if self._profile.count() == 0:
-            self.show_notice(NO_PROFILES_NOTICE)
+        standing = self._standing_notice()
+        if standing:
+            self.show_notice(standing)
         elif self.notice_text() == NO_PROFILES_NOTICE:
             self.show_notice("")
         self._sync_buttons()
@@ -138,6 +149,32 @@ class RunPage(QWidget):
             index = self._profile.findText(name)
         if index >= 0:
             self._profile.setCurrentIndex(index)
+            self._drop_unselected_missing()
+
+    def _drop_unselected_missing(self) -> None:
+        missing = self._missing_profile
+        if missing is None or self._profile.currentText() == missing:
+            return
+        self._clear_missing()
+        self._profile.removeItem(self._profile.findText(missing))
+        self._sync_buttons()
+
+    def _clear_missing(self) -> None:
+        missing = self._missing_profile
+        self._missing_profile = None
+        if missing is not None and self.notice_text() == missing_profile_notice(missing):
+            self.show_notice("")
+
+    def _on_profile_activated(self, _: int) -> None:
+        self._drop_unselected_missing()
+        self.profile_changed.emit(self._profile.currentText())
+
+    def _standing_notice(self) -> str:
+        if self._missing_profile:
+            return missing_profile_notice(self._missing_profile)
+        if self._profile.count() == 0:
+            return NO_PROFILES_NOTICE
+        return ""
 
     def profile_name(self) -> str:
         return self._profile.currentText()
@@ -156,7 +193,7 @@ class RunPage(QWidget):
         if busy:
             self.show_notice(HARDWARE_BUSY_NOTICE)
         elif self.notice_text() == HARDWARE_BUSY_NOTICE:
-            self.show_notice("")
+            self.show_notice(self._standing_notice())
         self._sync_buttons()
 
     def set_pending_parameters(self, parameters: Mapping[str, Any]) -> None:
@@ -177,9 +214,8 @@ class RunPage(QWidget):
         if not self._can_start():
             return
         if not self._profile_file_exists():
-            name = self._profile.currentText()
+            self._missing_profile = self._profile.currentText()
             self.refresh_profiles()
-            self.show_notice(f"프로파일 '{name}' 파일이 없어 시작할 수 없습니다.")
             return
         self._prepare_for_run()
         try:
@@ -207,6 +243,7 @@ class RunPage(QWidget):
         return (
             bool(self._serial.text().strip())
             and self._profile.count() > 0
+            and self._missing_profile is None
             and not self._runner.is_running
             and not self._hardware_busy
         )

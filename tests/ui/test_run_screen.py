@@ -5,7 +5,7 @@ from typing import Any, List, Tuple
 
 import pytest
 import yaml
-from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QPushButton
+from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QLineEdit, QPushButton
 
 from eol_ui.main_window import MainWindow
 from eol_ui.pages.run import ABORT_NOTICE, NO_PROFILES_NOTICE
@@ -282,7 +282,7 @@ def test_start_blocked_when_profile_file_missing(qtbot, window, fast_profiles):
     assert "default" in window.run_page.notice_text()
     assert "없" in window.run_page.notice_text()
     assert not profile_file.exists()
-    assert window.run_page.profile_names() == []
+    assert window.run_page.profile_name() == "default"
     assert not child(window, QPushButton, "start-button").isEnabled()
 
 
@@ -295,4 +295,54 @@ def test_start_disabled_without_profiles(window, fast_profiles):
     window.run_page.refresh_profiles()
 
     assert not start.isEnabled()
+    assert window.run_page.notice_text() == NO_PROFILES_NOTICE
+
+
+def test_missing_profile_stays_selected_until_operator_picks_another(window, fast_profiles):
+    parameters = window.settings_page.parameters
+    parameters.field("voltage").edit.setText("45")
+    parameters.bar.name_input.setText("line2")
+    parameters.bar.save_button.click()
+    parameters.bar.select_profile("line2")
+    parameters.field("voltage").edit.setText("46")
+    parameters.bar.apply_button.click()
+    run_page = window.run_page
+    assert run_page.profile_name() == "line2"
+    assert run_page.applied_text() == "적용된 변경 1개"
+    (fast_profiles / "line2.yaml").unlink()
+    child(window, QLineEdit, "serial-input").setText("SN1")
+    start = child(window, QPushButton, "start-button")
+    started: List[Any] = []
+    window.runner.start = started.append
+
+    start.click()
+    start.click()
+
+    assert started == []
+    assert run_page.profile_name() == "line2"
+    assert "line2" in run_page.notice_text()
+    assert not start.isEnabled()
+    assert "line2" in run_page.profile_names()
+    assert parameters.profile_name == "line2"
+
+    combo = child(window, QComboBox, "profile-combo")
+    combo.setCurrentIndex(combo.findText("default"))
+    combo.activated.emit(combo.currentIndex())
+
+    assert run_page.profile_name() == "default"
+    assert run_page.profile_names() == ["default"]
+    assert parameters.profile_name == "default"
+    assert run_page.applied_text() == "적용된 변경 0개"
+    assert run_page.build_request().parameters == {"test_profile": "default"}
+    assert run_page.notice_text() == ""
+    assert start.isEnabled()
+
+
+def test_no_profiles_notice_survives_hardware_busy(window, fast_profiles):
+    (fast_profiles / "default.yaml").unlink()
+    window.run_page.refresh_profiles()
+
+    window.run_page.set_hardware_busy(True)
+    window.run_page.set_hardware_busy(False)
+
     assert window.run_page.notice_text() == NO_PROFILES_NOTICE
