@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from typing import Any, List, Tuple
 
@@ -7,6 +8,7 @@ import pytest
 import yaml
 from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QLineEdit, QPushButton
 
+from eol_tester.hardware.mock import MockMCUService
 from eol_ui.main_window import MainWindow
 from eol_ui.pages.run import ABORT_NOTICE, NO_PROFILES_NOTICE
 from eol_ui.pages.run.page import HARDWARE_BUSY_NOTICE
@@ -139,6 +141,42 @@ def test_fail_verdict_screen(qtbot, window):
     assert window.result_page.banner_title == "FAIL"
     assert "0/2" in window.result_page.banner_summary
     assert window.run_page.measurements.badge_texts() == ["FAIL", "FAIL"]
+
+
+def _run_with_failing_boot(qtbot, window, monkeypatch, wait_boot, parameters=None):
+    monkeypatch.setattr(MockMCUService, "wait_boot_complete", wait_boot)
+    window.run_page.set_pending_parameters(parameters or {})
+    outcomes = collect_outcomes(window)
+    begin_run(window)
+    wait_for_outcomes(qtbot, outcomes)
+    return outcomes[0]
+
+
+def test_error_screen_shows_boot_timeout_reason(qtbot, window, monkeypatch):
+    async def never_boots(self) -> None:
+        await asyncio.Event().wait()
+
+    outcome = _run_with_failing_boot(
+        qtbot, window, monkeypatch, never_boots, {"timeout_seconds": 0.3}
+    )
+
+    assert outcome.verdict is Verdict.ERROR
+    assert window.result_page.banner_kind == "ERROR"
+    assert "MCU boot complete" in window.result_page.banner_detail
+
+
+def test_error_screen_shows_fallback_for_reasonless_error(qtbot, window, monkeypatch):
+    async def fails_silently(self) -> None:
+        raise RuntimeError()
+
+    outcome = _run_with_failing_boot(qtbot, window, monkeypatch, fails_silently)
+
+    assert outcome.verdict is Verdict.ERROR
+    assert window.result_page.banner_kind == "ERROR"
+    detail = window.result_page.banner_detail
+    assert detail
+    assert "SETUP_ERROR" in detail or "이유가 전달되지 않았다" in detail
+    assert not detail.rstrip().endswith("Setup failed:")
 
 
 def test_log_filter_and_counts(qtbot):

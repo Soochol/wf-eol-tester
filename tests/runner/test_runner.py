@@ -13,6 +13,7 @@ from eol_ui.pages.result import ResultPage
 from eol_ui.progress import Phase, ProgressState, StageStatus
 from eol_ui.runner import (
     LogRecord,
+    ErrorEvent,
     RunnerBusyError,
     RunOutcome,
     RunRequest,
@@ -146,6 +147,50 @@ def test_runner_setup_error(qtbot, monkeypatch):
     assert "mock device unreachable" in outcome.error
     assert not outcome.stages["setup"].passed
     assert outcome.measurements == ()
+
+
+def _setup_error_outcome(error: str, events: List[Any], failure: Any = None) -> RunOutcome:
+    now = datetime.now()
+    return build_outcome(
+        REQUEST,
+        {"passed": False, "error": error},
+        failure,
+        events,
+        False,
+        now,
+        now,
+    )
+
+
+def test_build_outcome_fills_reasonless_error():
+    events = [
+        StepCompleteEvent(step_name="setup", index=0, passed=False, duration=0.1, error="Setup failed: "),
+        ErrorEvent(code="SETUP_ERROR", message=""),
+    ]
+
+    outcome = _setup_error_outcome("Setup failed: Setup failed: ", events)
+
+    assert outcome.verdict is Verdict.ERROR
+    assert outcome.error is not None
+    assert "SETUP_ERROR" in outcome.error
+    assert not outcome.error.rstrip().endswith("Setup failed:")
+
+
+def test_build_outcome_fallback_uses_message_and_failure_type():
+    events = [ErrorEvent(code="SETUP_ERROR", message="  ")]
+    outcome = _setup_error_outcome("Setup failed: ", events, RuntimeError())
+    assert "SETUP_ERROR" in outcome.error and "RuntimeError" in outcome.error
+
+    outcome = _setup_error_outcome("Setup failed: ", [])
+    assert outcome.verdict is Verdict.ERROR
+    assert "이유가 전달되지 않았다" in outcome.error
+
+
+def test_build_outcome_keeps_error_with_reason():
+    events = [ErrorEvent(code="SETUP_ERROR", message="mock device unreachable")]
+    outcome = _setup_error_outcome("Setup failed: mock device unreachable", events)
+
+    assert outcome.error == "Setup failed: mock device unreachable"
 
 
 def test_runner_rejects_second_start(qtbot):
