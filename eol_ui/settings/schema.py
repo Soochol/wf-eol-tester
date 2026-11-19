@@ -18,6 +18,8 @@ _LIST_PARAMETERS = ("temperature_list", "stroke_positions")
 STROKE_MIN = 0.0
 STROKE_MAX = 180000.0
 
+PROFILE_ONLY_PARAMETERS = ("stop_on_failure",)
+
 PROFILE_LOCATION: dict[str, Optional[Tuple[str, str]]] = {
     "voltage": ("hardware", "voltage"),
     "current": ("hardware", "current"),
@@ -33,7 +35,7 @@ PROFILE_LOCATION: dict[str, Optional[Tuple[str, str]]] = {
     "timeout_seconds": ("execution", "timeout_seconds"),
     "force_limit_min": ("pass_criteria", "force_limit_min"),
     "force_limit_max": ("pass_criteria", "force_limit_max"),
-    "stop_on_failure": None,
+    "stop_on_failure": ("execution", "stop_on_failure"),
 }
 
 

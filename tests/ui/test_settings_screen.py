@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+import asyncio
+import os
+import re
 import shutil
+import subprocess
+import sys
+import textwrap
+import time
 from pathlib import Path
 from typing import Any, Dict, List
 
 import pytest
+import shiboken6
 import yaml
 from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit, QPushButton
 
@@ -13,7 +21,7 @@ from eol_ui.main_window import MainWindow
 from eol_ui.pages.settings.fields import ListField
 from eol_ui.pages.settings.parameters import DISCARD_NOTICE, GROUPS
 from eol_ui.runner import RunOutcome, SequenceRunner
-from eol_ui.settings import load_schema
+from eol_ui.settings import HardwareStore, load_schema
 from eol_ui.theme import stylesheet
 
 pytestmark = pytest.mark.usefixtures("mock_hardware", "fast_profiles", "tmp_results")
@@ -395,3 +403,231 @@ def test_run_profile_follows_profile_added_after_startup(window, fast_profiles):
     edit(window, "voltage", "41")
     params(window).bar.apply_button.click()
     assert window.run_page.build_request().parameters == {"test_profile": "late", "voltage": 41.0}
+
+
+def set_list(win: MainWindow, name: str, values: List[str]) -> None:
+    field = params(win).field(name)
+    while field.chip_texts():
+        field.findChild(QPushButton, f"chip-remove-{name}-0").click()
+    for value in values:
+        field.edit.setText(value)
+        field.add_button.click()
+
+
+def error_total(win: MainWindow) -> int:
+    return int(re.search(r"오류 (\d+)", params(win).bar.counts_text()).group(1))
+
+
+def test_stop_on_failure_survives_profile_save(window):
+    check = params(window).field("stop_on_failure").check
+    check.setChecked(False)
+    params(window).bar.apply_button.click()
+
+    save_profile(window, "nostop")
+
+    assert not check.isChecked()
+    assert window.run_page.build_request().parameters["stop_on_failure"] is False
+
+    params(window).bar.select_profile("default")
+
+    assert check.isChecked()
+    assert "stop_on_failure" not in window.run_page.build_request().parameters
+
+    params(window).bar.select_profile("nostop")
+
+    assert not check.isChecked()
+    assert window.run_page.build_request().parameters["stop_on_failure"] is False
+
+
+def test_stop_on_failure_profile_is_used_at_startup(qtbot, fast_profiles):
+    data = yaml.safe_load((fast_profiles / "default.yaml").read_text(encoding="utf-8"))
+    data["execution"]["stop_on_failure"] = False
+    (fast_profiles / "default.yaml").write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    win = MainWindow()
+    qtbot.addWidget(win)
+
+    assert not params(win).field("stop_on_failure").check.isChecked()
+    assert win.run_page.build_request().parameters["stop_on_failure"] is False
+    assert win.run_page.applied_text() == "적용된 변경 0개"
+
+
+def apply_standby_over_activation(win: MainWindow) -> None:
+    edit(win, "standby_temperature", "60")
+    edit(win, "activation_temperature", "50")
+
+
+def apply_temperature_over_upper(win: MainWindow) -> None:
+    set_list(win, "temperature_list", ["90"])
+
+
+def apply_stroke_below_initial(win: MainWindow) -> None:
+    set_list(win, "stroke_positions", ["500"])
+
+
+def apply_huge_temperature(win: MainWindow) -> None:
+    set_list(win, "temperature_list", ["38", "1e300"])
+
+
+def apply_equal_force_limits(win: MainWindow) -> None:
+    edit(win, "force_limit_min", "10")
+    edit(win, "force_limit_max", "10")
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        apply_standby_over_activation,
+        apply_temperature_over_upper,
+        apply_stroke_below_initial,
+        apply_huge_temperature,
+        apply_equal_force_limits,
+    ],
+)
+def test_validator_rules_block_apply(window, change):
+    bar = params(window).bar
+    change(window)
+
+    assert error_total(window) >= 1
+    assert not bar.apply_button.isEnabled()
+    assert not bar.save_button.isEnabled()
+    assert bar.rule_errors_text() != ""
+    assert bar.rule_errors_visible()
+
+
+def test_validator_errors_clear_when_fixed(window):
+    bar = params(window).bar
+    apply_equal_force_limits(window)
+    assert not bar.apply_button.isEnabled()
+
+    bar.revert_button.click()
+
+    assert error_total(window) == 0
+    assert bar.apply_button.isEnabled()
+    assert bar.save_button.isEnabled()
+    assert not bar.rule_errors_visible()
+
+
+def test_default_profile_has_no_validator_errors(window):
+    assert error_total(window) == 0
+    assert params(window).bar.apply_button.isEnabled()
+    assert not params(window).bar.rule_errors_visible()
+
+
+def test_mock_toggle_on_corrupt_yaml_shows_error(window, mock_hardware):
+    switch = hardware(window).mock_switch
+    assert switch.isChecked()
+    mock_hardware.write_text(": : [", encoding="utf-8")
+
+    switch.click()
+
+    assert switch.isChecked()
+    assert "Mock 전환을 저장하지 못했습니다" in hardware(window).message_text()
+    assert hardware(window).model_text("robot") == "mock"
+    assert mock_hardware.read_text(encoding="utf-8") == ": : ["
+
+
+def slow_connection_test(seconds: float):
+    async def connection_test(self: HardwareStore):
+        await asyncio.sleep(seconds)
+        return {device: (True, None) for device in DEVICES}
+
+    return connection_test
+
+
+def test_close_during_connection_test_does_not_block(qtbot, window, monkeypatch):
+    monkeypatch.setattr(HardwareStore, "connection_test", slow_connection_test(1.5))
+    hardware(window).test_button.click()
+    thread = hardware(window).connection_thread()
+    events: List[str] = []
+    thread.finished.connect(lambda: events.append("finished"))
+    thread.destroyed.connect(lambda: events.append("destroyed"))
+    assert thread.isRunning()
+
+    began = time.monotonic()
+    window.close()
+    elapsed = time.monotonic() - began
+
+    assert elapsed < 0.2
+    assert window.isVisible()
+    assert shiboken6.isValid(thread) and thread.isRunning()
+    assert hardware(window).message_text() != "연결을 시험하는 중입니다..."
+    assert "닫" in hardware(window).message_text()
+    assert not hardware(window).test_button.isEnabled()
+
+    qtbot.waitUntil(lambda: not window.isVisible(), timeout=10_000)
+    qtbot.waitUntil(lambda: events == ["finished", "destroyed"], timeout=10_000)
+
+
+def test_close_after_connection_test_closes_immediately(qtbot, window):
+    hardware(window).test_button.click()
+    qtbot.waitUntil(lambda: not hardware(window).is_testing(), timeout=RUN_TIMEOUT_MS)
+
+    window.close()
+
+    assert not window.isVisible()
+
+
+APP_SCRIPT = textwrap.dedent(
+    """
+    import asyncio, os, sys
+    from pathlib import Path
+    import eol_tester.config as eol_config
+    eol_config.HARDWARE_CONFIG_FILE = Path(os.environ["EOL_HARDWARE_CONFIG"])
+    eol_config.TEST_PROFILES_DIR = Path(os.environ["EOL_TEST_PROFILES"])
+    from PySide6.QtCore import QTimer
+    from eol_ui.app import main
+    from eol_ui.main_window import MainWindow
+    from eol_ui.settings import HardwareStore
+
+    async def slow(self):
+        await asyncio.sleep(1.0)
+        return {d: (True, None) for d in ("robot", "loadcell", "mcu", "power", "digital_io")}
+
+    HardwareStore.connection_test = slow
+
+    real_show = MainWindow.show
+
+    def show(window):
+        real_show(window)
+        QTimer.singleShot(300, lambda: begin(window))
+
+    def begin(window):
+        window.settings_page.hardware.test_button.click()
+        QTimer.singleShot(150, window.close)
+
+    MainWindow.show = show
+    sys.exit(main(["eol-ui"]))
+    """
+)
+
+
+def test_app_exits_cleanly_when_closed_during_connection_test(tmp_path, mock_hardware, fast_profiles):
+    script = tmp_path / "run_app.py"
+    script.write_text(APP_SCRIPT, encoding="utf-8")
+    env = {**os.environ, "QT_QPA_PLATFORM": "offscreen"}
+    env["EOL_HARDWARE_CONFIG"] = str(mock_hardware)
+    env["EOL_TEST_PROFILES"] = str(fast_profiles)
+
+    done = subprocess.run(
+        [sys.executable, "-c", f"import runpy; runpy.run_path({str(script)!r}, run_name='__main__')"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert "QThread: Destroyed while thread is still running" not in done.stderr
+    assert done.returncode == 0, done.stderr
+
+
+def test_connection_test_crash_does_not_leave_window_stuck(qtbot, window, monkeypatch):
+    async def crash(self: HardwareStore):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(HardwareStore, "connection_test", crash)
+    hardware(window).test_button.click()
+    window.close()
+
+    qtbot.waitUntil(lambda: not window.isVisible(), timeout=10_000)
+    assert not hardware(window).is_testing()

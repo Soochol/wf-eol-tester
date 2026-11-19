@@ -33,6 +33,9 @@ LOCK_REASON = "실행 중에는 하드웨어 설정을 바꾸거나 연결을 �
 UNKNOWN_TEXT = "미확인"
 CONNECTED_TEXT = "연결됨"
 CONFIG_PATH_TEXT = "config/hardware_config.yaml"
+CLOSE_WAIT_NOTICE = (
+    "연결 테스트가 끝날 때까지 기다린 뒤 창을 닫습니다. 장치 연결을 도중에 끊지 않기 위해서입니다."
+)
 
 
 class HardwarePage(QWidget):
@@ -165,6 +168,12 @@ class HardwarePage(QWidget):
     def is_testing(self) -> bool:
         return self._testing
 
+    def connection_thread(self) -> Optional[ConnectionTestThread]:
+        return self._thread
+
+    def show_close_wait(self) -> None:
+        self._message.setText(CLOSE_WAIT_NOTICE)
+
     def set_running(self, running: bool) -> None:
         self._locked = running
         self._sync_enabled()
@@ -180,13 +189,10 @@ class HardwarePage(QWidget):
 
     def _on_mock_toggled(self, enabled: bool) -> None:
         try:
-            self._store.load()
-            self._store.set_mock(enabled)
-            self._store.save()
+            self._store.switch_mock(enabled)
         except Exception as error:
-            self._store.load()
             self._mock.blockSignals(True)
-            self._mock.setChecked(self._store.is_mock())
+            self._mock.setChecked(not enabled)
             self._mock.blockSignals(False)
             self._message.setText(f"Mock 전환을 저장하지 못했습니다: {error}")
             return

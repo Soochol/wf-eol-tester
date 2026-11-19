@@ -309,3 +309,91 @@ def test_null_profile_values_use_defaults_and_save(fast_profiles: Path) -> None:
     model.set_value("repeat_count", 3)
     model.save_as("nulls")
     assert eol_config.load_test_profile("nulls")["execution"]["repeat_count"] == 3
+
+
+def test_stop_on_failure_is_stored_in_profile_and_read_back(fast_profiles: Path) -> None:
+    model = SettingsModel()
+    model.load("default")
+    model.set_value("stop_on_failure", False)
+    model.save_as("nostop")
+
+    assert eol_config.load_test_profile("nostop")["execution"]["stop_on_failure"] is False
+    assert model.baseline("stop_on_failure") is False
+    assert model.changed_count() == 0
+    assert model.carried_parameters() == {"stop_on_failure": False}
+    assert model.to_parameters() == {"test_profile": "nostop", "stop_on_failure": False}
+
+    model.set_value("stop_on_failure", True)
+    assert model.to_parameters() == {"test_profile": "nostop", "stop_on_failure": True}
+    model.load("default")
+    assert model.carried_parameters() == {}
+
+
+async def test_profile_with_stop_on_failure_runs(
+    fast_profiles: Path, mock_hardware: Path, tmp_results: Path, recording_output: RecordingOutput
+) -> None:
+    model = SettingsModel()
+    model.load("default")
+    model.set_value("stop_on_failure", False)
+    model.save_as("nostop")
+    assert eol_config.load_test_profile("nostop")["execution"]["stop_on_failure"] is False
+
+    context = ExecutionContext(serial_number="SN1", wip_id="W1")
+    sequence = EOLForceTestSequence(
+        context, output_strategy=recording_output, parameters=model.to_parameters()
+    )
+    result = await sequence._execute()
+
+    assert sequence.stop_on_failure is False
+    assert not any(
+        "Configuration validation failed" in str(args) for _, args in recording_output.events
+    )
+    assert "passed" in result
+
+
+@pytest.mark.parametrize(
+    "name, value",
+    [
+        ("standby_temperature", 60),
+        ("temperature_list", [90]),
+        ("stroke_positions", [500]),
+        ("temperature_list", [38, 1e300]),
+    ],
+)
+def test_validator_rules_are_reported_by_model(model: SettingsModel, name: str, value: Any) -> None:
+    if name == "standby_temperature":
+        model.set_value("activation_temperature", 50)
+    model.set_value(name, value)
+
+    assert model.rule_errors()
+    assert model.error_count() >= 1
+    with pytest.raises(ValueError):
+        model.to_parameters()
+    with pytest.raises(ValueError):
+        model.save_as("blocked")
+
+
+def test_equal_force_limits_are_reported_by_model(model: SettingsModel) -> None:
+    model.set_value("force_limit_min", 10)
+    model.set_value("force_limit_max", 10)
+
+    assert any("Force limit" in message for message in model.rule_errors())
+
+
+def test_default_profile_has_no_rule_errors(model: SettingsModel) -> None:
+    assert model.rule_errors() == []
+    assert model.error_count() == 0
+
+
+def test_profile_force_limits_are_validated_as_the_sequence_reads_them(fast_profiles: Path) -> None:
+    path = fast_profiles / "default.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["pass_criteria"]["force_limit_min"] = 50
+    data["pass_criteria"]["force_limit_max"] = 50
+    path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    model = SettingsModel()
+    model.load("default")
+
+    model.set_value("force_limit_max", 60)
+
+    assert any("Force limit" in message for message in model.rule_errors())

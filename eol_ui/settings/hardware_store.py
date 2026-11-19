@@ -102,6 +102,16 @@ class HardwareStore:
                 self._data[device]["model"] = backup.get(device, REAL_MODELS[device])
             self._data.pop(MOCK_BACKUP_KEY, None)
 
+    def switch_mock(self, enabled: bool) -> None:
+        previous = self._data
+        try:
+            self.load()
+            self.set_mock(enabled)
+            self.save()
+        except Exception:
+            self._data = previous
+            raise
+
     def save(self) -> None:
         self.path().write_text(
             yaml.safe_dump(self._data, sort_keys=False, allow_unicode=True), encoding="utf-8"

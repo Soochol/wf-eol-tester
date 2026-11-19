@@ -38,6 +38,9 @@ class ProfileBar(QWidget):
         self._message = label("", "notice")
         self._message.setObjectName("profile-message")
         self._message.setWordWrap(True)
+        self._rules = label("", "field-error")
+        self._rules.setObjectName("rule-errors")
+        self._rules.setWordWrap(True)
         self._overwrite = QPushButton("덮어쓰기")
         self._overwrite.setObjectName("overwrite-button")
         self._overwrite.setProperty("danger", True)
@@ -67,6 +70,7 @@ class ProfileBar(QWidget):
         confirm.setContentsMargins(0, 0, 0, 0)
         outer.addLayout(top)
         outer.addWidget(self._confirm_row)
+        outer.addWidget(self._rules)
         outer.addWidget(self._message)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -81,6 +85,7 @@ class ProfileBar(QWidget):
         self._name.textChanged.connect(self._on_name_changed)
         self._clear_overwrite()
         self.show_message("")
+        self.show_rule_errors([])
 
     def set_profiles(self, names: List[str], current: str) -> None:
         self._combo.blockSignals(True)
@@ -111,6 +116,16 @@ class ProfileBar(QWidget):
         self._errors = errors
         self._sync_save()
         self._revert.setEnabled(changed > 0 or errors > 0)
+
+    def show_rule_errors(self, messages: List[str]) -> None:
+        self._rules.setText("\n".join(f"• {message}" for message in messages))
+        self._rules.setVisible(bool(messages))
+
+    def rule_errors_text(self) -> str:
+        return self._rules.text()
+
+    def rule_errors_visible(self) -> bool:
+        return not self._rules.isHidden()
 
     def counts_text(self) -> str:
         return self._counts.text()

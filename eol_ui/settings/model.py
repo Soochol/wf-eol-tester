@@ -2,14 +2,22 @@ from __future__ import annotations
 
 import copy
 import math
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Coroutine, Optional, cast
 
 import yaml
+from loguru import logger
+from station_service_sdk import ExecutionContext
+from station_service_sdk.core.interfaces import OutputStrategy
 
 import eol_tester.config as eol_config
-from eol_ui.settings.schema import PROFILE_LOCATION, ParamSpec, load_schema
+from eol_tester.domain.exceptions import ConfigurationValidationError
+from eol_tester.domain.value_objects import TestConfiguration
+from eol_tester.sequence import EOLForceTestSequence
+from eol_tester.services.configuration_validator import ConfigurationValidator
+from eol_ui.settings.schema import PROFILE_LOCATION, PROFILE_ONLY_PARAMETERS, ParamSpec, load_schema
 
 Value = Any
 
@@ -67,6 +75,29 @@ def _range_error(spec: ParamSpec, value: float) -> Optional[str]:
     return None
 
 
+_VALIDATOR_LOGGER = "eol_tester.services.configuration_validator"
+_FORCE_LIMITS = ("force_limit_min", "force_limit_max")
+
+
+class _SilentOutput:
+    pass
+
+
+def _without_nulls(node: Any) -> Any:
+    if not isinstance(node, dict):
+        return node
+    return {key: _without_nulls(value) for key, value in node.items() if value is not None}
+
+
+def _finish(coroutine: Coroutine[Any, Any, None]) -> None:
+    try:
+        coroutine.send(None)
+    except StopIteration:
+        return
+    coroutine.close()
+    raise RuntimeError("검증기가 비동기 대기를 요구한다")
+
+
 class SettingsModel:
     def __init__(self) -> None:
         self.schema: dict[str, ParamSpec] = load_schema()
@@ -74,6 +105,7 @@ class SettingsModel:
         self._profile: dict[str, Any] = {}
         self._baseline: dict[str, Value] = {}
         self._raw: dict[str, Any] = {}
+        self._rules: Optional[list[str]] = None
 
     @property
     def profile_name(self) -> str:
@@ -88,6 +120,7 @@ class SettingsModel:
         self._profile_name = profile_name
         self._baseline = {name: self._read_baseline(spec) for name, spec in self.schema.items()}
         self._raw = {}
+        self._rules = None
 
     def _read_baseline(self, spec: ParamSpec) -> Value:
         location = PROFILE_LOCATION[spec.name]
@@ -96,6 +129,8 @@ class SettingsModel:
             section, key = location
             found = (self._profile.get(section) or {}).get(key)
             value = spec.default if found is None else found
+            if spec.kind == "bool" and not isinstance(value, bool):
+                value = spec.default
         return _PARSERS[spec.kind](value)
 
     def baseline(self, name: str) -> Value:
@@ -105,6 +140,7 @@ class SettingsModel:
         if name not in self.schema:
             raise KeyError(name)
         self._raw[name] = raw
+        self._rules = None
 
     def value(self, name: str) -> Any:
         return self._raw.get(name, self._baseline[name])
@@ -141,8 +177,63 @@ class SettingsModel:
                 found[name] = message
         return found
 
+    def rule_errors(self) -> list[str]:
+        if self._rules is None:
+            self._rules = self._check_rules() if not self.errors() else []
+        return list(self._rules)
+
     def error_count(self) -> int:
-        return len(self.errors())
+        return len(self.errors()) + len(self.rule_errors())
+
+    def _run_parameters(self, names: list[str]) -> dict[str, Any]:
+        parameters: dict[str, Any] = {"test_profile": self._profile_name}
+        parameters.update(self.carried_parameters())
+        for name in names:
+            parameters[name] = self._parsed(name)[0]
+        return parameters
+
+    def _check_rules(self) -> list[str]:
+        logger.disable(_VALIDATOR_LOGGER)
+        try:
+            messages: list[str] = []
+            for config in self._test_configurations():
+                try:
+                    _finish(ConfigurationValidator().validate_test_configuration(config))
+                except ConfigurationValidationError as error:
+                    messages.extend(m for m in error.errors if m not in messages)
+            return messages
+        except Exception as error:
+            return [f"설정을 검증하지 못했다: {error}"]
+        finally:
+            logger.enable(_VALIDATOR_LOGGER)
+
+    def _test_configurations(self) -> list[TestConfiguration]:
+        changed = self.changed_names()
+        sequence = EOLForceTestSequence(
+            ExecutionContext(serial_number="settings"),
+            output_strategy=cast(OutputStrategy, _SilentOutput()),
+            parameters=self._run_parameters(changed),
+        )
+        config = sequence._create_test_config_from_profile(_without_nulls(self._profile))
+        overrides = sequence._collect_parameter_overrides()
+        if overrides:
+            config = config.with_overrides(**overrides)
+        configs = [config]
+        if any(name in changed for name in _FORCE_LIMITS):
+            criteria = replace(
+                config.pass_criteria,
+                force_limit_min=self._parsed("force_limit_min")[0],
+                force_limit_max=self._parsed("force_limit_max")[0],
+            )
+            configs.append(config.with_overrides(pass_criteria=criteria))
+        return configs
+
+    def carried_parameters(self) -> dict[str, Any]:
+        return {
+            name: self._baseline[name]
+            for name in PROFILE_ONLY_PARAMETERS
+            if self._baseline[name] != self.schema[name].default
+        }
 
     def is_changed(self, name: str) -> bool:
         if name not in self._raw:
@@ -158,14 +249,12 @@ class SettingsModel:
 
     def revert(self) -> None:
         self._raw = {}
+        self._rules = None
 
     def to_parameters(self) -> dict[str, Any]:
         if self.error_count():
             raise ValueError(f"오류가 있어 변환할 수 없다: {self.errors()}")
-        parameters: dict[str, Any] = {"test_profile": self._profile_name}
-        for name in self.changed_names():
-            parameters[name] = self._parsed(name)[0]
-        return parameters
+        return self._run_parameters(self.changed_names())
 
     def save_as(self, name: str, overwrite: bool = False) -> Path:
         if not name or name != Path(name).name or name.startswith("."):
