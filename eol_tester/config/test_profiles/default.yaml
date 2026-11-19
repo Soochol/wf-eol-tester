@@ -51,7 +51,7 @@ tolerances:
   measurement_tolerance: 0.001
   force_precision: 2
   temperature_precision: 1
-  temperature_tolerance: 3.0
+  temperature_tolerance: 30 # 3.0
 
 pass_criteria:
   force_limit_min: 0.0

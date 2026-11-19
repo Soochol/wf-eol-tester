@@ -173,7 +173,7 @@ def test_hardware_store_preserves_keys(real_hardware: Path) -> None:
     for key in ("digital_io", "metadata"):
         assert after[key] == before[key]
     assert after["power"]["delimiter"] == before["power"]["delimiter"]
-    assert after["robot"]["motion_param_file"] == before["robot"]["motion_param_file"]
+    assert after["robot"] == before["robot"]
 
 
 def test_hardware_store_rejects_bad_values(real_hardware: Path) -> None:
@@ -186,7 +186,13 @@ def test_hardware_store_rejects_bad_values(real_hardware: Path) -> None:
         store.set_value("loadcell", "model", "mock")
 
 
+def _models(path: Path) -> tuple[str, ...]:
+    data = _yaml(path)
+    return tuple(data[device]["model"] for device in ("robot", "loadcell", "mcu", "power", "digital_io"))
+
+
 def test_hardware_store_mock_roundtrip(real_hardware: Path) -> None:
+    before = _models(real_hardware)
     store = HardwareStore()
     assert not store.is_mock()
     store.set_mock(True)
@@ -197,14 +203,23 @@ def test_hardware_store_mock_roundtrip(real_hardware: Path) -> None:
     reopened = HardwareStore()
     reopened.set_mock(False)
     reopened.save()
-    loaded = eol_config.load_hardware_config()
-    assert (
-        loaded.robot.model,
-        loaded.loadcell.model,
-        loaded.mcu.model,
-        loaded.power.model,
-        loaded.digital_io.model,
-    ) == ("ajinextek", "bs205", "lma", "oda", "ajinextek")
+    assert _models(real_hardware) == before
+    assert "ui_real_models" not in _yaml(real_hardware)
+
+
+def test_hardware_store_mock_roundtrip_restores_oda_power(real_hardware: Path) -> None:
+    data = _yaml(real_hardware)
+    data["power"]["model"] = "oda"
+    real_hardware.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+
+    store = HardwareStore()
+    store.set_mock(True)
+    store.save()
+    reopened = HardwareStore()
+    reopened.set_mock(False)
+    reopened.save()
+
+    assert _models(real_hardware) == ("ajinextek", "bs205", "lma", "oda", "ajinextek")
 
 
 def test_hardware_store_unmock_without_backup_uses_manifest_models(mock_hardware: Path) -> None:

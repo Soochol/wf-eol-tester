@@ -5,7 +5,6 @@ robot:
   irq_no: 7
   timeout: 30.0
   polling_interval: 250
-  motion_param_file: sequences/eol_force_test/config/robot_motion_settings.mot
 
 loadcell:
   model: bs205
@@ -27,7 +26,7 @@ mcu:
   parity: null
 
 power:
-  model: oda
+  model: mock
   host: 192.168.11.1
   port: 5000
   timeout: 5.0
@@ -36,22 +35,8 @@ power:
 
     '
 
-power_analyzer:
-  model: mock
-  host: 192.168.1.100
-  port: 10001
-  timeout: 5.0
-  element: 1
-  voltage_range: null
-  current_range: null
-  auto_range: true
-  line_filter: null
-  frequency_filter: null
-
 digital_io:
   model: ajinextek
-  input_module_no: 0
-  output_module_no: 1
   emergency_stop_button:
     pin_number: 3
     contact_type: A
