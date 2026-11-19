@@ -1,0 +1,168 @@
+{"t": 0.006, "kind": "status", "status": "setup"}
+{"t": 0.006, "kind": "log", "level": "INFO", "message": "Starting EOL Force Test setup..."}
+{"t": 0.006, "kind": "log", "level": "INFO", "message": "Initializing hardware adapter..."}
+{"t": 0.008, "kind": "log", "level": "INFO", "message": "Loaded test profile: default"}
+{"t": 0.011, "kind": "log", "level": "INFO", "message": "Creating hardware adapter (mock mode)"}
+{"t": 0.011, "kind": "log", "level": "INFO", "message": "Hardware adapter initialized"}
+{"t": 0.011, "kind": "log", "level": "INFO", "message": "Validating configurations..."}
+{"t": 0.011, "kind": "log", "level": "INFO", "message": "EOLHardwareAdapter: Validating configurations..."}
+{"t": 0.011, "kind": "log", "level": "INFO", "message": "Starting comprehensive configuration validation..."}
+{"t": 0.011, "kind": "log", "level": "INFO", "message": "Test configuration validation passed"}
+{"t": 0.011, "kind": "log", "level": "INFO", "message": "Hardware configuration validation passed"}
+{"t": 0.011, "kind": "log", "level": "DEBUG", "message": "Configuration compatibility validation passed"}
+{"t": 0.011, "kind": "log", "level": "INFO", "message": "All configuration validations passed"}
+{"t": 0.012, "kind": "log", "level": "INFO", "message": "EOLHardwareAdapter: Configuration validation passed"}
+{"t": 0.012, "kind": "log", "level": "INFO", "message": "Configuration summary: {'test_configuration': {'voltage': 40.0, 'current': 42.0, 'temperature_count': 2, 'temperature_range': [38.0, 52.0], 'position_count': 1, 'stroke_range': [20000.0, 20000.0], 'repeat_count': 1, 'estimated_duration': 55.0}, 'hardware_configuration': {'robot_model': 'mock', 'mcu_model': 'mock', 'power_model': 'mock', 'loadcell_model': 'mock', 'digital_io_model': 'mock', 'is_mock_mode': True}}"}
+{"t": 0.012, "kind": "log", "level": "INFO", "message": "Connecting to hardware devices..."}
+{"t": 0.012, "kind": "log", "level": "INFO", "message": "EOLHardwareAdapter: Connecting to hardware..."}
+{"t": 0.012, "kind": "log", "level": "INFO", "message": "Connecting hardware..."}
+{"t": 0.113, "kind": "log", "level": "INFO", "message": "MockRobot: Connected"}
+{"t": 0.113, "kind": "log", "level": "INFO", "message": "MockMCU: Connected"}
+{"t": 0.113, "kind": "log", "level": "INFO", "message": "MockPower: Connected"}
+{"t": 0.113, "kind": "log", "level": "INFO", "message": "MockLoadCell: Connected"}
+{"t": 0.113, "kind": "log", "level": "INFO", "message": "MockDigitalIO: Connected"}
+{"t": 0.113, "kind": "log", "level": "INFO", "message": "Successfully connected: Robot, MCU, Power, LoadCell, DigitalIO"}
+{"t": 0.113, "kind": "log", "level": "INFO", "message": "EOLHardwareAdapter: Hardware connected successfully"}
+{"t": 0.113, "kind": "log", "level": "INFO", "message": "Hardware status: {'robot': True, 'mcu': True, 'power': True, 'loadcell': True, 'digital_io': True}"}
+{"t": 0.113, "kind": "log", "level": "INFO", "message": "Initializing industrial system (Tower Lamp)..."}
+{"t": 0.113, "kind": "log", "level": "INFO", "message": "EOLHardwareAdapter: Initializing industrial system..."}
+{"t": 0.113, "kind": "log", "level": "INFO", "message": "IndustrialSystemManager initialized"}
+{"t": 0.113, "kind": "log", "level": "INFO", "message": "Initializing Industrial System..."}
+{"t": 0.113, "kind": "log", "level": "INFO", "message": "TowerLampService initialized - Red: Ch4, Yellow: Ch5, Green: Ch6, Beep: Ch7"}
+{"t": 0.113, "kind": "log", "level": "INFO", "message": "Setting system status to system_idle"}
+{"t": 0.113, "kind": "log", "level": "INFO", "message": "Setting system status to system_idle"}
+{"t": 0.113, "kind": "log", "level": "INFO", "message": "System idle - Green lamp ON"}
+{"t": 0.113, "kind": "log", "level": "DEBUG", "message": "MockDigitalIO: Output 4 = False"}
+{"t": 0.113, "kind": "log", "level": "DEBUG", "message": "MockDigitalIO: Output 5 = False"}
+{"t": 0.113, "kind": "log", "level": "DEBUG", "message": "MockDigitalIO: Output 6 = True"}
+{"t": 0.113, "kind": "log", "level": "DEBUG", "message": "MockDigitalIO: Output 7 = False"}
+{"t": 0.113, "kind": "log", "level": "INFO", "message": "Industrial System initialization complete - Green ON"}
+{"t": 0.113, "kind": "log", "level": "INFO", "message": "EOLHardwareAdapter: Industrial system initialized"}
+{"t": 0.113, "kind": "log", "level": "INFO", "message": "Industrial system initialized - Green lamp ON"}
+{"t": 0.113, "kind": "log", "level": "INFO", "message": "Initializing hardware parameters..."}
+{"t": 0.113, "kind": "log", "level": "INFO", "message": "EOLHardwareAdapter: Initializing hardware..."}
+{"t": 0.113, "kind": "log", "level": "INFO", "message": "Initializing hardware with configuration..."}
+{"t": 0.113, "kind": "log", "level": "DEBUG", "message": "MockDigitalIO: Output 0 = True"}
+{"t": 0.213, "kind": "log", "level": "INFO", "message": "MockPower: Output disabled"}
+{"t": 0.264, "kind": "log", "level": "INFO", "message": "MockPower: Voltage set to 40.0V"}
+{"t": 0.314, "kind": "log", "level": "INFO", "message": "MockPower: Current set to 42.0A"}
+{"t": 0.365, "kind": "log", "level": "INFO", "message": "MockPower: Current limit set to 42.0A"}
+{"t": 0.365, "kind": "log", "level": "INFO", "message": "Enabling servo for axis 0..."}
+{"t": 0.466, "kind": "log", "level": "INFO", "message": "MockRobot: Servo 0 enabled"}
+{"t": 0.466, "kind": "log", "level": "INFO", "message": "Performing robot homing..."}
+{"t": 0.966, "kind": "log", "level": "INFO", "message": "MockRobot: Axis 0 homed"}
+{"t": 0.966, "kind": "log", "level": "INFO", "message": "Robot homing completed"}
+{"t": 0.966, "kind": "log", "level": "INFO", "message": "Moving robot to initial position: 1000.0um"}
+{"t": 0.977, "kind": "log", "level": "DEBUG", "message": "MockRobot: Moved to 1000.0um"}
+{"t": 0.977, "kind": "log", "level": "INFO", "message": "Hardware initialization completed"}
+{"t": 0.977, "kind": "log", "level": "INFO", "message": "EOLHardwareAdapter: Hardware initialized"}
+{"t": 0.977, "kind": "log", "level": "INFO", "message": "Hardware parameters initialized"}
+{"t": 0.977, "kind": "log", "level": "INFO", "message": "Setting up test environment..."}
+{"t": 0.977, "kind": "log", "level": "INFO", "message": "EOLHardwareAdapter: Setting up test..."}
+{"t": 0.977, "kind": "log", "level": "INFO", "message": "Setting up test..."}
+{"t": 1.077, "kind": "log", "level": "INFO", "message": "MockPower: Output enabled"}
+{"t": 1.077, "kind": "log", "level": "INFO", "message": "Power enabled: 40.0V, 42.0A"}
+{"t": 1.078, "kind": "log", "level": "INFO", "message": "Waiting for MCU boot complete signal..."}
+{"t": 1.579, "kind": "log", "level": "INFO", "message": "MockMCU: Boot complete signal received"}
+{"t": 1.63, "kind": "log", "level": "INFO", "message": "MockMCU: Test mode set to TestMode.MODE_1"}
+{"t": 1.63, "kind": "log", "level": "INFO", "message": "Starting LMA standby sequence..."}
+{"t": 1.68, "kind": "log", "level": "INFO", "message": "MockMCU: Upper temperature set to 80.0C"}
+{"t": 1.732, "kind": "log", "level": "INFO", "message": "MockMCU: Fan speed set to 10"}
+{"t": 1.831, "kind": "log", "level": "INFO", "message": "MockMCU: Standby heating started (op: 52.0C, standby: 38.0C)"}
+{"t": 1.831, "kind": "log", "level": "INFO", "message": "Verifying MCU temperature - Expected: 52.0C (±3.0C)"}
+{"t": 1.831, "kind": "log", "level": "INFO", "message": "✅ Mock environment - Temperature verification bypassed for 52.0C"}
+{"t": 2.122, "kind": "log", "level": "DEBUG", "message": "MockRobot: Moved to 20000um"}
+{"t": 2.313, "kind": "log", "level": "DEBUG", "message": "MockRobot: Moved to 1000.0um"}
+{"t": 2.413, "kind": "log", "level": "INFO", "message": "MockMCU: Standby cooling started"}
+{"t": 2.414, "kind": "log", "level": "INFO", "message": "Verifying MCU temperature - Expected: 38.0C (±3.0C)"}
+{"t": 2.414, "kind": "log", "level": "INFO", "message": "✅ Mock environment - Temperature verification bypassed for 38.0C"}
+{"t": 2.514, "kind": "log", "level": "INFO", "message": "LMA standby sequence completed"}
+{"t": 2.514, "kind": "log", "level": "INFO", "message": "Test setup completed"}
+{"t": 2.514, "kind": "log", "level": "INFO", "message": "EOLHardwareAdapter: Test setup complete"}
+{"t": 2.514, "kind": "log", "level": "INFO", "message": "Test environment setup complete"}
+{"t": 2.514, "kind": "log", "level": "INFO", "message": "DUT: SN1"}
+{"t": 2.514, "kind": "log", "level": "INFO", "message": "Result repository initialized: /results"}
+{"t": 2.514, "kind": "log", "level": "INFO", "message": "EOL Force Test setup completed successfully"}
+{"t": 2.514, "kind": "status", "status": "running"}
+{"t": 2.515, "kind": "log", "level": "INFO", "message": "Starting EOL Force Test execution..."}
+{"t": 2.515, "kind": "log", "level": "INFO", "message": "Test matrix: 2 temps x 1 positions x 1 repeats = 2 measurements"}
+{"t": 2.515, "kind": "step_complete", "step_name": "setup", "passed": true, "duration": 2.511}
+{"t": 2.515, "kind": "status", "status": "running"}
+{"t": 2.515, "kind": "log", "level": "INFO", "message": "EOLHardwareAdapter: Executing force test sequence..."}
+{"t": 2.515, "kind": "log", "level": "INFO", "message": "Starting force test sequence..."}
+{"t": 2.515, "kind": "log", "level": "INFO", "message": "Setting temperature to 38.0C (1/2)"}
+{"t": 2.615, "kind": "log", "level": "INFO", "message": "MockMCU: Operating temperature set to 38.0C"}
+{"t": 2.615, "kind": "log", "level": "INFO", "message": "Verifying MCU temperature - Expected: 38.0C (±3.0C)"}
+{"t": 2.615, "kind": "log", "level": "INFO", "message": "✅ Mock environment - Temperature verification bypassed for 38.0C"}
+{"t": 2.716, "kind": "log", "level": "INFO", "message": "Measuring at position 20000.0um (1/1)"}
+{"t": 2.907, "kind": "log", "level": "DEBUG", "message": "MockRobot: Moved to 20000.0um"}
+{"t": 2.907, "kind": "log", "level": "DEBUG", "message": "Force: 6.499kgf"}
+{"t": 3.097, "kind": "log", "level": "DEBUG", "message": "MockRobot: Moved to 1000.0um"}
+{"t": 3.198, "kind": "log", "level": "INFO", "message": "MockMCU: Standby cooling started"}
+{"t": 3.198, "kind": "log", "level": "INFO", "message": "Verifying MCU temperature - Expected: 38.0C (±3.0C)"}
+{"t": 3.198, "kind": "log", "level": "INFO", "message": "✅ Mock environment - Temperature verification bypassed for 38.0C"}
+{"t": 3.299, "kind": "log", "level": "INFO", "message": "Setting temperature to 52.0C (2/2)"}
+{"t": 3.399, "kind": "log", "level": "INFO", "message": "MockMCU: Operating temperature set to 52.0C"}
+{"t": 3.4, "kind": "log", "level": "INFO", "message": "Verifying MCU temperature - Expected: 52.0C (±3.0C)"}
+{"t": 3.4, "kind": "log", "level": "INFO", "message": "✅ Mock environment - Temperature verification bypassed for 52.0C"}
+{"t": 3.5, "kind": "log", "level": "INFO", "message": "Measuring at position 20000.0um (1/1)"}
+{"t": 3.691, "kind": "log", "level": "DEBUG", "message": "MockRobot: Moved to 20000.0um"}
+{"t": 3.691, "kind": "log", "level": "DEBUG", "message": "Force: 6.870kgf"}
+{"t": 3.882, "kind": "log", "level": "DEBUG", "message": "MockRobot: Moved to 1000.0um"}
+{"t": 3.983, "kind": "log", "level": "INFO", "message": "MockMCU: Standby cooling started"}
+{"t": 3.983, "kind": "log", "level": "INFO", "message": "Verifying MCU temperature - Expected: 38.0C (±3.0C)"}
+{"t": 3.984, "kind": "log", "level": "INFO", "message": "✅ Mock environment - Temperature verification bypassed for 38.0C"}
+{"t": 4.084, "kind": "log", "level": "INFO", "message": "Cycle 1 completed: 1.57s"}
+{"t": 4.084, "kind": "log", "level": "INFO", "message": "Force test sequence completed"}
+{"t": 4.084, "kind": "log", "level": "INFO", "message": "EOLHardwareAdapter: Force test sequence completed"}
+{"t": 4.085, "kind": "step_complete", "step_name": "force_test", "passed": true, "duration": 55.0}
+{"t": 4.085, "kind": "log", "level": "INFO", "message": "Force test completed: PASS"}
+{"t": 4.085, "kind": "log", "level": "INFO", "message": "Test completed successfully (PASS) - Green BLINK"}
+{"t": 4.085, "kind": "log", "level": "INFO", "message": "Setting system status to test_pass"}
+{"t": 4.085, "kind": "log", "level": "INFO", "message": "Setting system status to test_pass"}
+{"t": 4.085, "kind": "log", "level": "INFO", "message": "Test PASS - Green lamp BLINKING + Beep 1s"}
+{"t": 4.085, "kind": "log", "level": "DEBUG", "message": "MockDigitalIO: Output 4 = False"}
+{"t": 4.085, "kind": "log", "level": "DEBUG", "message": "MockDigitalIO: Output 5 = False"}
+{"t": 4.085, "kind": "log", "level": "DEBUG", "message": "MockDigitalIO: Output 6 = False"}
+{"t": 4.085, "kind": "log", "level": "DEBUG", "message": "MockDigitalIO: Output 7 = True"}
+{"t": 4.085, "kind": "log", "level": "DEBUG", "message": "MockDigitalIO: Output 6 = True"}
+{"t": 5.086, "kind": "log", "level": "DEBUG", "message": "MockDigitalIO: Output 7 = False"}
+{"t": 5.086, "kind": "log", "level": "INFO", "message": "Saved raw measurements to: /results/raw_data/raw_measurements_20261119_122723.csv"}
+{"t": 5.087, "kind": "log", "level": "INFO", "message": "Updated test summary: /results/test_summary.csv"}
+{"t": 5.087, "kind": "log", "level": "INFO", "message": "Saved test JSON to: /results/SN1_20261119_122723.json"}
+{"t": 5.087, "kind": "log", "level": "INFO", "message": "Test results saved to: /results"}
+{"t": 5.087, "kind": "status", "status": "teardown"}
+{"t": 5.087, "kind": "log", "level": "INFO", "message": "Starting EOL Force Test teardown..."}
+{"t": 5.087, "kind": "log", "level": "INFO", "message": "Tearing down test..."}
+{"t": 5.087, "kind": "log", "level": "INFO", "message": "EOLHardwareAdapter: Tearing down test..."}
+{"t": 5.087, "kind": "log", "level": "INFO", "message": "Tearing down test..."}
+{"t": 5.087, "kind": "log", "level": "DEBUG", "message": "MockDigitalIO: Output 6 = False"}
+{"t": 5.188, "kind": "log", "level": "INFO", "message": "MockPower: Output disabled"}
+{"t": 5.188, "kind": "log", "level": "INFO", "message": "Test teardown completed"}
+{"t": 5.188, "kind": "log", "level": "INFO", "message": "EOLHardwareAdapter: Test teardown complete"}
+{"t": 5.188, "kind": "log", "level": "INFO", "message": "Test teardown complete"}
+{"t": 5.188, "kind": "log", "level": "INFO", "message": "Shutting down industrial system..."}
+{"t": 5.188, "kind": "log", "level": "INFO", "message": "Shutting down Industrial System..."}
+{"t": 5.189, "kind": "log", "level": "INFO", "message": "Shutting down Tower Lamp Service"}
+{"t": 5.189, "kind": "log", "level": "INFO", "message": "Turning off all lamps"}
+{"t": 5.189, "kind": "log", "level": "DEBUG", "message": "MockDigitalIO: Output 4 = False"}
+{"t": 5.189, "kind": "log", "level": "DEBUG", "message": "MockDigitalIO: Output 5 = False"}
+{"t": 5.189, "kind": "log", "level": "DEBUG", "message": "MockDigitalIO: Output 6 = False"}
+{"t": 5.189, "kind": "log", "level": "DEBUG", "message": "MockDigitalIO: Output 7 = False"}
+{"t": 5.189, "kind": "log", "level": "INFO", "message": "Industrial System shutdown complete"}
+{"t": 5.189, "kind": "log", "level": "INFO", "message": "Industrial system shutdown complete"}
+{"t": 5.189, "kind": "log", "level": "INFO", "message": "Disconnecting hardware..."}
+{"t": 5.189, "kind": "log", "level": "INFO", "message": "EOLHardwareAdapter: Disconnecting from hardware..."}
+{"t": 5.189, "kind": "log", "level": "INFO", "message": "Shutting down hardware..."}
+{"t": 5.289, "kind": "log", "level": "INFO", "message": "MockPower: Output disabled"}
+{"t": 5.39, "kind": "log", "level": "INFO", "message": "MockRobot: Disconnected"}
+{"t": 5.39, "kind": "log", "level": "INFO", "message": "MockMCU: Disconnected"}
+{"t": 5.39, "kind": "log", "level": "INFO", "message": "MockPower: Disconnected"}
+{"t": 5.39, "kind": "log", "level": "INFO", "message": "MockLoadCell: Disconnected"}
+{"t": 5.39, "kind": "log", "level": "INFO", "message": "MockDigitalIO: Disconnected"}
+{"t": 5.39, "kind": "log", "level": "INFO", "message": "Hardware shutdown completed"}
+{"t": 5.39, "kind": "log", "level": "INFO", "message": "EOLHardwareAdapter: Hardware disconnected"}
+{"t": 5.39, "kind": "log", "level": "INFO", "message": "Hardware disconnected"}
+{"t": 5.39, "kind": "log", "level": "INFO", "message": "EOL Force Test teardown completed"}
+{"t": 5.39, "kind": "step_complete", "step_name": "teardown", "passed": true, "duration": 0.303}
+{"t": 5.39, "kind": "sequence_complete"}
