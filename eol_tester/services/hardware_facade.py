@@ -256,7 +256,9 @@ class HardwareServiceFacade:
                 if deadline is not None:
                     remaining = deadline - loop.time()
                     if remaining <= 0:
-                        raise asyncio.TimeoutError()
+                        raise asyncio.TimeoutError(
+                            f"MCU boot complete signal not received within {timeout_seconds}s"
+                        )
                     poll = min(poll, remaining)
                 done, _ = await asyncio.wait({task}, timeout=poll)
                 if done:

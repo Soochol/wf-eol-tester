@@ -14,6 +14,7 @@ from station_service_sdk.core.exceptions import AbortError
 from eol_tester import EOLForceTestSequence
 from eol_tester.config import load_hardware_config
 from eol_tester.domain.value_objects import DUTCommandInfo, HardwareConfig, TestConfiguration
+from eol_tester.hardware.mock import MockMCUService
 from eol_tester.hardware_adapter import create_standalone_hardware_adapter
 from eol_tester.interfaces import MCUService, TestMode
 from eol_tester.services.hardware_facade import HardwareServiceFacade
@@ -242,9 +243,40 @@ async def test_boot_wait_timeout_unchanged() -> None:
 
     for abort_check in (None, lambda: None):
         mcu.boot_wait_cancelled = False
-        with pytest.raises(asyncio.TimeoutError):
+        with pytest.raises(asyncio.TimeoutError) as exc_info:
             await facade.setup_test(config, HardwareConfig(), abort_check=abort_check)
+        assert "MCU boot complete" in str(exc_info.value)
+        assert "0.3" in str(exc_info.value)
         assert mcu.boot_wait_cancelled
+
+
+async def test_setup_boot_timeout_error_has_reason(
+    recording_output: RecordingOutput,
+    tmp_results: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def never_boots(self: Any) -> None:
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(MockMCUService, "wait_boot_complete", never_boots)
+    seq = _sequence(recording_output)
+    original = seq.get_parameter
+    monkeypatch.setattr(
+        seq,
+        "get_parameter",
+        lambda name, default=None: 0.3 if name == "timeout_seconds" else original(name, default),
+    )
+
+    result = await seq._execute()
+
+    assert result["passed"] is False
+    assert "MCU boot complete" in result["error"]
+    setup_errors = [e for e in recording_output.named("error") if e["code"] == "SETUP_ERROR"]
+    assert setup_errors
+    for setup_error in setup_errors:
+        assert "MCU boot complete" in setup_error["message"]
+    assert "MCU boot complete" in _step_complete(recording_output, "setup")["error"]
+    _assert_teardown_recorded(recording_output)
 
 
 async def test_abort_flag_unused_without_request(instant_sleep: None) -> None:
