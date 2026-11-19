@@ -127,6 +127,9 @@ class RunPage(QWidget):
 
     def set_profile(self, name: str) -> None:
         index = self._profile.findText(name)
+        if index < 0:
+            self.refresh_profiles()
+            index = self._profile.findText(name)
         if index >= 0:
             self._profile.setCurrentIndex(index)
 

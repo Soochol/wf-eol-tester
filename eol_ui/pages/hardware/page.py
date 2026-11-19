@@ -47,6 +47,7 @@ class HardwarePage(QWidget):
         self._testing = False
         self._thread: Optional[ConnectionTestThread] = None
         self._edits: Dict[Tuple[str, str], QLineEdit] = {}
+        self._loaded: Dict[Tuple[str, str], str] = {}
         self._models: Dict[str, object] = {}
         self._statuses: Dict[str, object] = {}
 
@@ -120,6 +121,7 @@ class HardwarePage(QWidget):
             row.addWidget(label(KEY_TITLES[key], "muted"))
             row.addWidget(edit)
             self._edits[(device, key)] = edit
+            self._loaded[(device, key)] = edit.text()
         return holder
 
     def _refresh_models(self) -> None:
@@ -198,6 +200,8 @@ class HardwarePage(QWidget):
         try:
             self._store.load()
             for (device, key), edit in self._edits.items():
+                if edit.text() == self._loaded[(device, key)]:
+                    continue
                 try:
                     self._store.set_value(device, key, edit.text())
                 except ValueError as error:
@@ -211,6 +215,8 @@ class HardwarePage(QWidget):
         except Exception as error:
             self._message.setText(f"저장하지 못했습니다: {error}")
             return
+        for (device, key), edit in self._edits.items():
+            self._loaded[(device, key)] = edit.text()
         self._message.setText(f"{CONFIG_PATH_TEXT}에 저장했습니다.")
         self._reset_statuses()
 

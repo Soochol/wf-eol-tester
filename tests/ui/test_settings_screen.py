@@ -176,7 +176,7 @@ def test_save_profile(window, fast_profiles):
     assert "저장했습니다" in bar.message_text()
 
 
-@pytest.mark.parametrize("name", ["", "   ", "line2.yaml", "a.b", "../x", "a/b", "a\\b", "bad:name"])
+@pytest.mark.parametrize("name", ["", "   ", "line2.yaml", "a.b", "../x", "a/b", "a\\b", "bad:name", "a" * 65])
 def test_save_profile_rejects_bad_names(window, fast_profiles, name):
     edit(window, "voltage", "45")
     before = sorted(p.name for p in fast_profiles.iterdir())
@@ -369,3 +369,29 @@ def test_e2e_changed_params_reach_sequence(qtbot, window):
     assert window.result_page.isVisible()
     assert window.result_page.table_row_count() == 1
     assert "1/1" in window.result_page.banner_summary
+
+
+def test_hardware_save_writes_only_edited_keys(real_hardware, window):
+    data = yaml.safe_load(real_hardware.read_text(encoding="utf-8"))
+    data["robot"]["axis_id"] = 7
+    real_hardware.write_text(yaml.safe_dump(data), encoding="utf-8")
+    hardware(window).edit("mcu", "baudrate").setText("57600")
+
+    hardware(window).save_button.click()
+
+    saved = yaml.safe_load(real_hardware.read_text(encoding="utf-8"))
+    assert saved["robot"]["axis_id"] == 7
+    assert saved["mcu"]["baudrate"] == 57600
+
+
+def test_run_profile_follows_profile_added_after_startup(window, fast_profiles):
+    source = fast_profiles / "default.yaml"
+    (fast_profiles / "late.yaml").write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+
+    params(window).refresh_profiles()
+    params(window).select_profile("late")
+
+    assert window.run_page.profile_name() == "late"
+    edit(window, "voltage", "41")
+    params(window).bar.apply_button.click()
+    assert window.run_page.build_request().parameters == {"test_profile": "late", "voltage": 41.0}
