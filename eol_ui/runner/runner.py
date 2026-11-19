@@ -128,7 +128,7 @@ class SequenceRunner(QObject):
         try:
             asyncio.set_event_loop(loop)
             result = loop.run_until_complete(self._execute(loop, request, strategy))
-        except BaseException as exc:  # noqa: BLE001 - every failure must reach the UI as an outcome
+        except BaseException as exc:
             failure = exc
         finally:
             logger.remove(sink_id)
