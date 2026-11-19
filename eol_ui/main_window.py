@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 import eol_tester
 from eol_tester.config import load_hardware_config
 from eol_ui.pages import ResultPage, RunPage, SettingsPage
+from eol_ui.pages.hardware.page import CLOSE_WAIT_NOTICE
 from eol_ui.pages.run import CLOSE_NOTICE
 from eol_ui.progress import ProgressState
 from eol_ui.runner import RunOutcome, SequenceRunner
@@ -94,11 +95,17 @@ class MainWindow(QMainWindow):
             lambda: self.run_page.set_profile(parameters.profile_name)
         )
         parameters.applied.connect(self._on_applied)
+        self._on_applied(parameters.carried_parameters(), 0)
         self.run_page.running_changed.connect(hardware.set_running)
         hardware.set_running(self.runner.is_running)
         hardware.busy_changed.connect(self.run_page.set_hardware_busy)
+        hardware.busy_changed.connect(self._on_hardware_busy)
         hardware.mock_changed.connect(lambda _: self.refresh_mock_badge())
         hardware.connection_tested.connect(self._paint_devices)
+
+    def _on_hardware_busy(self, busy: bool) -> None:
+        if not busy and self._closing:
+            self.close()
 
     def _on_applied(self, parameters: object, count: int) -> None:
         self.run_page.set_pending_parameters(parameters)
@@ -169,13 +176,20 @@ class MainWindow(QMainWindow):
         self.run_page.start_run(serial_number)
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        if not self.runner.is_running:
-            self.settings_page.hardware.shutdown()
-            super().closeEvent(event)
+        hardware = self.settings_page.hardware
+        if self.runner.is_running:
+            self._closing = True
+            self.run_page.request_abort(CLOSE_NOTICE)
+            event.ignore()
             return
-        self._closing = True
-        self.run_page.request_abort(CLOSE_NOTICE)
-        event.ignore()
+        if hardware.is_testing():
+            self._closing = True
+            hardware.show_close_wait()
+            self.run_page.show_notice(CLOSE_WAIT_NOTICE)
+            event.ignore()
+            return
+        hardware.shutdown()
+        super().closeEvent(event)
 
 
 __all__ = ["APP_NAME", "MainWindow"]

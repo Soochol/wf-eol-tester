@@ -6,6 +6,7 @@ from typing import Optional
 from PySide6.QtCore import QObject, QThread, Signal
 
 from eol_ui.settings import HardwareStore
+from eol_ui.settings.hardware_store import DEVICES
 
 
 class ConnectionTestThread(QThread):
@@ -16,4 +17,9 @@ class ConnectionTestThread(QThread):
         self._store = store
 
     def run(self) -> None:
-        self.done.emit(asyncio.run(self._store.connection_test()))
+        try:
+            result = asyncio.run(self._store.connection_test())
+        except Exception as error:
+            message = str(error) or type(error).__name__
+            result = {device: (False, message) for device in DEVICES}
+        self.done.emit(result)

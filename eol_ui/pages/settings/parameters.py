@@ -127,6 +127,9 @@ class ParametersPanel(QWidget):
     def applied_count(self) -> int:
         return self._applied_count
 
+    def carried_parameters(self) -> Dict[str, Any]:
+        return self.model.carried_parameters()
+
     def profile_names(self) -> List[str]:
         return self._bar.profile_names()
 
@@ -149,7 +152,7 @@ class ParametersPanel(QWidget):
         self._bar.show_message(DISCARD_NOTICE if discarded else "")
 
     def _after_profile_load(self) -> None:
-        self._set_applied({}, 0)
+        self._set_applied(self.model.carried_parameters(), 0)
         self.refresh_profiles()
         self._reload_fields()
         self.profile_changed.emit(self.model.profile_name)
@@ -171,7 +174,9 @@ class ParametersPanel(QWidget):
                 errors.get(name),
                 format_value(self.model.baseline(name)),
             )
-        self._bar.show_counts(self.model.changed_count(), len(errors))
+        rules = self.model.rule_errors()
+        self._bar.show_rule_errors(rules)
+        self._bar.show_counts(self.model.changed_count(), len(errors) + len(rules))
 
     def _on_edited(self, name: str, raw: Any) -> None:
         self.model.set_value(name, raw)
@@ -187,7 +192,7 @@ class ParametersPanel(QWidget):
         if self.model.error_count():
             return
         parameters = self.model.to_parameters()
-        self._set_applied(parameters, len(parameters) - 1)
+        self._set_applied(parameters, self.model.changed_count())
         self._bar.show_message("")
 
     def save_profile(self, name: str, overwrite: bool) -> None:

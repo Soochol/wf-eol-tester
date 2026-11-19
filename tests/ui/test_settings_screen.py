@@ -577,7 +577,6 @@ APP_SCRIPT = textwrap.dedent(
     eol_config.HARDWARE_CONFIG_FILE = Path(os.environ["EOL_HARDWARE_CONFIG"])
     eol_config.TEST_PROFILES_DIR = Path(os.environ["EOL_TEST_PROFILES"])
     from PySide6.QtCore import QTimer
-    from PySide6.QtWidgets import QApplication
     from eol_ui.app import main
     from eol_ui.main_window import MainWindow
     from eol_ui.settings import HardwareStore
@@ -588,12 +587,17 @@ APP_SCRIPT = textwrap.dedent(
 
     HardwareStore.connection_test = slow
 
-    def start_test():
-        window = next(w for w in QApplication.topLevelWidgets() if isinstance(w, MainWindow))
+    real_show = MainWindow.show
+
+    def show(window):
+        real_show(window)
+        QTimer.singleShot(300, lambda: begin(window))
+
+    def begin(window):
         window.settings_page.hardware.test_button.click()
         QTimer.singleShot(150, window.close)
 
-    QTimer.singleShot(300, start_test)
+    MainWindow.show = show
     sys.exit(main(["eol-ui"]))
     """
 )
@@ -616,3 +620,15 @@ def test_app_exits_cleanly_when_closed_during_connection_test(tmp_path, mock_har
 
     assert "QThread: Destroyed while thread is still running" not in done.stderr
     assert done.returncode == 0, done.stderr
+
+
+def test_connection_test_crash_does_not_leave_window_stuck(qtbot, window, monkeypatch):
+    async def crash(self: HardwareStore):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(HardwareStore, "connection_test", crash)
+    hardware(window).test_button.click()
+    window.close()
+
+    qtbot.waitUntil(lambda: not window.isVisible(), timeout=10_000)
+    assert not hardware(window).is_testing()
