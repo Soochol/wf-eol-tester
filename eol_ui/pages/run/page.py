@@ -165,11 +165,19 @@ class RunPage(QWidget):
         if missing is not None and self.notice_text() == missing_profile_notice(missing):
             self.show_notice("")
 
+    def _heal_missing(self) -> None:
+        missing = self._missing_profile
+        if missing and self._profile.currentText() == missing and self._profile_file_exists():
+            self.refresh_profiles()
+
     def _on_profile_activated(self, _: int) -> None:
         self._drop_unselected_missing()
+        self._sync_buttons()
         self.profile_changed.emit(self._profile.currentText())
 
     def _standing_notice(self) -> str:
+        if self._hardware_busy:
+            return HARDWARE_BUSY_NOTICE
         if self._missing_profile:
             return missing_profile_notice(self._missing_profile)
         if self._profile.count() == 0:
@@ -209,6 +217,7 @@ class RunPage(QWidget):
         )
 
     def start_run(self, serial_number: Optional[str] = None) -> None:
+        self._heal_missing()
         if serial_number is not None:
             self._serial.setText(serial_number)
         if not self._can_start():
@@ -260,6 +269,7 @@ class RunPage(QWidget):
         self._tiles.show_state(ProgressState())
 
     def _sync_buttons(self) -> None:
+        self._heal_missing()
         running = self._runner.is_running
         self._start.setEnabled(self._can_start())
         self._abort.setEnabled(running and not self._runner.abort_requested)

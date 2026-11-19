@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QLineEdit, QPushB
 
 from eol_ui.main_window import MainWindow
 from eol_ui.pages.run import ABORT_NOTICE, NO_PROFILES_NOTICE
+from eol_ui.pages.run.page import HARDWARE_BUSY_NOTICE
 from eol_ui.runner import LogRecord, RunOutcome, Verdict
 from eol_ui.theme import stylesheet
 from eol_ui.widgets import LogPanel
@@ -346,3 +347,36 @@ def test_no_profiles_notice_survives_hardware_busy(window, fast_profiles):
     window.run_page.set_hardware_busy(False)
 
     assert window.run_page.notice_text() == NO_PROFILES_NOTICE
+
+
+def test_missing_profile_recovers_when_file_returns(window, fast_profiles):
+    run_page = window.run_page
+    child(window, QLineEdit, "serial-input").setText("SN1")
+    start = child(window, QPushButton, "start-button")
+    profile_file = fast_profiles / "default.yaml"
+    saved = profile_file.read_text(encoding="utf-8")
+    profile_file.unlink()
+    start.click()
+    assert not start.isEnabled()
+
+    profile_file.write_text(saved, encoding="utf-8")
+    combo = child(window, QComboBox, "profile-combo")
+    combo.activated.emit(combo.currentIndex())
+
+    assert start.isEnabled()
+    assert run_page.notice_text() == ""
+    assert run_page.profile_names() == ["default"]
+
+
+def test_hardware_busy_notice_wins_over_profile_notices(window, fast_profiles):
+    run_page = window.run_page
+    child(window, QLineEdit, "serial-input").setText("SN1")
+    (fast_profiles / "default.yaml").unlink()
+    child(window, QPushButton, "start-button").click()
+
+    run_page.set_hardware_busy(True)
+    run_page.refresh_profiles()
+    assert run_page.notice_text() == HARDWARE_BUSY_NOTICE
+
+    run_page.set_hardware_busy(False)
+    assert "default" in run_page.notice_text()
