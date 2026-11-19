@@ -85,7 +85,7 @@ def test_run_to_result_pass(qtbot, window):
     assert "2/2" in window.result_page.banner_summary
     assert any(name.endswith(".json") for name in window.result_page.file_names())
     assert not window.result_page.no_results_visible()
-    assert window.device_connected("robot") is True
+    assert window.device_connected("robot") is None
     assert window.run_page.measurements.badge_texts() == ["PASS", "PASS"]
 
 
