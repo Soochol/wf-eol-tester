@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from eol_tester.config import list_test_profiles
+import eol_tester.config as eol_config
 from eol_ui.progress import ProgressState
 from eol_ui.runner import (
     MeasurementEvent,
@@ -31,7 +31,12 @@ from .tiles import LiveTiles
 ABORT_NOTICE = "중단 요청됨 — 현재 측정이 끝나면 Teardown(전원 OFF · 로봇 원점 복귀)을 실행합니다."
 CLOSE_NOTICE = "Teardown 후 종료합니다"
 HARDWARE_BUSY_NOTICE = "연결 테스트 중에는 시작할 수 없습니다."
+NO_PROFILES_NOTICE = "테스트 프로파일이 없어 시작할 수 없습니다. 설정 화면에서 프로파일을 만드세요."
 _TICK_MS = 500
+
+
+def missing_profile_notice(name: str) -> str:
+    return f"프로파일 '{name}' 파일이 없어 시작할 수 없습니다. 다른 프로파일을 선택하세요."
 
 
 class RunPage(QWidget):
@@ -45,6 +50,7 @@ class RunPage(QWidget):
         self._last_rows = 0
         self._hardware_busy = False
         self._last_running = False
+        self._missing_profile: Optional[str] = None
 
         self._serial = QLineEdit()
         self._serial.setObjectName("serial-input")
@@ -78,7 +84,7 @@ class RunPage(QWidget):
         self.refresh_profiles()
         self.set_applied_count(0)
         self._serial.textChanged.connect(self._sync_buttons)
-        self._profile.activated.connect(lambda _: self.profile_changed.emit(self._profile.currentText()))
+        self._profile.activated.connect(self._on_profile_activated)
         self._start.clicked.connect(self._on_start_clicked)
         self._abort.clicked.connect(lambda: self.request_abort())
         runner.log.connect(self._log.append)
@@ -121,9 +127,20 @@ class RunPage(QWidget):
     def refresh_profiles(self) -> None:
         current = self._profile.currentText()
         self._profile.clear()
-        self._profile.addItems(list_test_profiles())
+        self._profile.addItems(eol_config.list_test_profiles())
+        if self._missing_profile and self._profile.findText(self._missing_profile) < 0:
+            self._profile.insertItem(0, self._missing_profile)
+            current = self._missing_profile
+        else:
+            self._clear_missing()
         if current:
             self._profile.setCurrentText(current)
+        standing = self._standing_notice()
+        if standing:
+            self.show_notice(standing)
+        elif self.notice_text() == NO_PROFILES_NOTICE:
+            self.show_notice("")
+        self._sync_buttons()
 
     def set_profile(self, name: str) -> None:
         index = self._profile.findText(name)
@@ -132,6 +149,40 @@ class RunPage(QWidget):
             index = self._profile.findText(name)
         if index >= 0:
             self._profile.setCurrentIndex(index)
+            self._drop_unselected_missing()
+
+    def _drop_unselected_missing(self) -> None:
+        missing = self._missing_profile
+        if missing is None or self._profile.currentText() == missing:
+            return
+        self._clear_missing()
+        self._profile.removeItem(self._profile.findText(missing))
+        self._sync_buttons()
+
+    def _clear_missing(self) -> None:
+        missing = self._missing_profile
+        self._missing_profile = None
+        if missing is not None and self.notice_text() == missing_profile_notice(missing):
+            self.show_notice("")
+
+    def _heal_missing(self) -> None:
+        missing = self._missing_profile
+        if missing and self._profile.currentText() == missing and self._profile_file_exists():
+            self.refresh_profiles()
+
+    def _on_profile_activated(self, _: int) -> None:
+        self._drop_unselected_missing()
+        self._sync_buttons()
+        self.profile_changed.emit(self._profile.currentText())
+
+    def _standing_notice(self) -> str:
+        if self._hardware_busy:
+            return HARDWARE_BUSY_NOTICE
+        if self._missing_profile:
+            return missing_profile_notice(self._missing_profile)
+        if self._profile.count() == 0:
+            return NO_PROFILES_NOTICE
+        return ""
 
     def profile_name(self) -> str:
         return self._profile.currentText()
@@ -150,7 +201,7 @@ class RunPage(QWidget):
         if busy:
             self.show_notice(HARDWARE_BUSY_NOTICE)
         elif self.notice_text() == HARDWARE_BUSY_NOTICE:
-            self.show_notice("")
+            self.show_notice(self._standing_notice())
         self._sync_buttons()
 
     def set_pending_parameters(self, parameters: Mapping[str, Any]) -> None:
@@ -166,9 +217,14 @@ class RunPage(QWidget):
         )
 
     def start_run(self, serial_number: Optional[str] = None) -> None:
+        self._heal_missing()
         if serial_number is not None:
             self._serial.setText(serial_number)
         if not self._can_start():
+            return
+        if not self._profile_file_exists():
+            self._missing_profile = self._profile.currentText()
+            self.refresh_profiles()
             return
         self._prepare_for_run()
         try:
@@ -195,9 +251,14 @@ class RunPage(QWidget):
     def _can_start(self) -> bool:
         return (
             bool(self._serial.text().strip())
+            and self._profile.count() > 0
+            and self._missing_profile is None
             and not self._runner.is_running
             and not self._hardware_busy
         )
+
+    def _profile_file_exists(self) -> bool:
+        return (eol_config.TEST_PROFILES_DIR / f"{self._profile.currentText()}.yaml").is_file()
 
     def _prepare_for_run(self) -> None:
         self._log.clear()
@@ -208,6 +269,7 @@ class RunPage(QWidget):
         self._tiles.show_state(ProgressState())
 
     def _sync_buttons(self) -> None:
+        self._heal_missing()
         running = self._runner.is_running
         self._start.setEnabled(self._can_start())
         self._abort.setEnabled(running and not self._runner.abort_requested)

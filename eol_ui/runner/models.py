@@ -35,7 +35,7 @@ class MeasurementRecord:
     name: str
     temperature: Optional[float]
     position: Optional[float]
-    force: float
+    force: Optional[float]
     min_value: Optional[float]
     max_value: Optional[float]
     passed: bool
@@ -81,6 +81,13 @@ def _step_completions(events: Sequence[SdkEvent]) -> Dict[str, StepCompleteEvent
     }
 
 
+def _optional_float(value: Any) -> Optional[float]:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _measurement_records(step: Optional[StepCompleteEvent]) -> Tuple[MeasurementRecord, ...]:
     if step is None:
         return ()
@@ -92,7 +99,7 @@ def _measurement_records(step: Optional[StepCompleteEvent]) -> Tuple[Measurement
                 name=name,
                 temperature=float(match.group(1)) if match else None,
                 position=float(match.group(2)) if match else None,
-                force=float(data["value"]),
+                force=_optional_float(data.get("value")),
                 min_value=data.get("min"),
                 max_value=data.get("max"),
                 passed=bool(data.get("passed")),

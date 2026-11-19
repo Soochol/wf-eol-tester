@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, List
 
 import pytest
 from loguru import logger
 from PySide6.QtCore import QCoreApplication, QThread
+from PySide6.QtWidgets import QApplication
 
 import eol_tester.hardware_adapter as hardware_adapter
+from eol_ui.pages.result import ResultPage
 from eol_ui.progress import Phase, ProgressState, StageStatus
 from eol_ui.runner import (
     LogRecord,
@@ -14,9 +17,12 @@ from eol_ui.runner import (
     RunOutcome,
     RunRequest,
     SequenceRunner,
+    StepCompleteEvent,
     StepStartEvent,
     Verdict,
 )
+from eol_ui.runner.models import build_outcome
+from eol_ui.theme import stylesheet
 
 pytestmark = pytest.mark.usefixtures("mock_hardware", "fast_profiles", "tmp_results")
 
@@ -216,3 +222,30 @@ def test_runner_finishes_when_loguru_handlers_are_removed_mid_run(qtbot):
     assert removed
     assert outcome.verdict is Verdict.PASS
     assert not runner.is_running
+
+
+def test_build_outcome_tolerates_measurement_without_value(qtbot):
+    QApplication.instance().setStyleSheet(stylesheet())
+    force_test = StepCompleteEvent(
+        step_name="force_test",
+        index=1,
+        passed=True,
+        duration=1.0,
+        measurements={
+            "force_38.0C_20000um": {"min": 0.0, "max": 3.0, "passed": True},
+            "force_52.0C_20000um": {"value": None, "min": 0.0, "max": 3.0, "passed": False},
+            "force_60.0C_20000um": {"value": "n/a", "passed": False},
+            "force_70.0C_20000um": {"value": "1.25", "min": 0.0, "max": 3.0, "passed": True},
+        },
+    )
+    now = datetime.now()
+
+    outcome = build_outcome(REQUEST, {"passed": True}, None, [force_test], False, now, now)
+
+    assert [m.force for m in outcome.measurements] == [None, None, None, 1.25]
+    assert [m.passed for m in outcome.measurements] == [True, False, False, True]
+    page = ResultPage()
+    qtbot.addWidget(page)
+    page.show_outcome(outcome)
+    assert page.table_row_count() == 4
+    assert "2/4 PASS" in page.banner_summary
