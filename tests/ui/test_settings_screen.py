@@ -439,18 +439,17 @@ def test_stop_on_failure_survives_profile_save(window):
     assert window.run_page.build_request().parameters["stop_on_failure"] is False
 
 
-def test_stop_on_failure_profile_is_used_at_startup(fast_profiles):
+def test_stop_on_failure_profile_is_used_at_startup(qtbot, fast_profiles):
     data = yaml.safe_load((fast_profiles / "default.yaml").read_text(encoding="utf-8"))
     data["execution"]["stop_on_failure"] = False
     (fast_profiles / "default.yaml").write_text(yaml.safe_dump(data), encoding="utf-8")
 
     win = MainWindow()
-    try:
-        assert not params(win).field("stop_on_failure").check.isChecked()
-        assert win.run_page.build_request().parameters["stop_on_failure"] is False
-        assert win.run_page.applied_text() == "적용된 변경 0개"
-    finally:
-        win.close()
+    qtbot.addWidget(win)
+
+    assert not params(win).field("stop_on_failure").check.isChecked()
+    assert win.run_page.build_request().parameters["stop_on_failure"] is False
+    assert win.run_page.applied_text() == "적용된 변경 0개"
 
 
 def apply_standby_over_activation(win: MainWindow) -> None:

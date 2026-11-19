@@ -383,3 +383,17 @@ def test_equal_force_limits_are_reported_by_model(model: SettingsModel) -> None:
 def test_default_profile_has_no_rule_errors(model: SettingsModel) -> None:
     assert model.rule_errors() == []
     assert model.error_count() == 0
+
+
+def test_profile_force_limits_are_validated_as_the_sequence_reads_them(fast_profiles: Path) -> None:
+    path = fast_profiles / "default.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["pass_criteria"]["force_limit_min"] = 50
+    data["pass_criteria"]["force_limit_max"] = 50
+    path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    model = SettingsModel()
+    model.load("default")
+
+    model.set_value("force_limit_max", 60)
+
+    assert any("Force limit" in message for message in model.rule_errors())

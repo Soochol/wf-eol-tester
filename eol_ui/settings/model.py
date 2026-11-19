@@ -5,11 +5,12 @@ import math
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Awaitable, Optional
+from typing import Any, Coroutine, Optional, cast
 
 import yaml
 from loguru import logger
 from station_service_sdk import ExecutionContext
+from station_service_sdk.core.interfaces import OutputStrategy
 
 import eol_tester.config as eol_config
 from eol_tester.domain.exceptions import ConfigurationValidationError
@@ -88,12 +89,12 @@ def _without_nulls(node: Any) -> Any:
     return {key: _without_nulls(value) for key, value in node.items() if value is not None}
 
 
-def _finish(coroutine: Awaitable[None]) -> None:
+def _finish(coroutine: Coroutine[Any, Any, None]) -> None:
     try:
-        coroutine.send(None)  # type: ignore[attr-defined]
+        coroutine.send(None)
     except StopIteration:
         return
-    coroutine.close()  # type: ignore[attr-defined]
+    coroutine.close()
     raise RuntimeError("검증기가 비동기 대기를 요구한다")
 
 
@@ -194,34 +195,38 @@ class SettingsModel:
     def _check_rules(self) -> list[str]:
         logger.disable(_VALIDATOR_LOGGER)
         try:
-            _finish(ConfigurationValidator().validate_test_configuration(self._test_configuration()))
-        except ConfigurationValidationError as error:
-            return list(error.errors)
+            messages: list[str] = []
+            for config in self._test_configurations():
+                try:
+                    _finish(ConfigurationValidator().validate_test_configuration(config))
+                except ConfigurationValidationError as error:
+                    messages.extend(m for m in error.errors if m not in messages)
+            return messages
         except Exception as error:
             return [f"설정을 검증하지 못했다: {error}"]
         finally:
             logger.enable(_VALIDATOR_LOGGER)
-        return []
 
-    def _test_configuration(self) -> TestConfiguration:
+    def _test_configurations(self) -> list[TestConfiguration]:
         changed = self.changed_names()
         sequence = EOLForceTestSequence(
             ExecutionContext(serial_number="settings"),
-            output_strategy=_SilentOutput(),  # type: ignore[arg-type]
+            output_strategy=cast(OutputStrategy, _SilentOutput()),
             parameters=self._run_parameters(changed),
         )
         config = sequence._create_test_config_from_profile(_without_nulls(self._profile))
         overrides = sequence._collect_parameter_overrides()
         if overrides:
             config = config.with_overrides(**overrides)
+        configs = [config]
         if any(name in changed for name in _FORCE_LIMITS):
             criteria = replace(
                 config.pass_criteria,
                 force_limit_min=self._parsed("force_limit_min")[0],
                 force_limit_max=self._parsed("force_limit_max")[0],
             )
-            config = config.with_overrides(pass_criteria=criteria)
-        return config
+            configs.append(config.with_overrides(pass_criteria=criteria))
+        return configs
 
     def carried_parameters(self) -> dict[str, Any]:
         return {
