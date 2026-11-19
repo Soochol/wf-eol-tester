@@ -1,0 +1,262 @@
+from __future__ import annotations
+
+import asyncio
+import time
+from pathlib import Path
+from typing import Any, List, Optional
+from unittest.mock import AsyncMock
+
+import pytest
+from loguru import logger
+from station_service_sdk import ExecutionContext
+from station_service_sdk.core.exceptions import AbortError
+
+from eol_tester import EOLForceTestSequence
+from eol_tester.config import load_hardware_config
+from eol_tester.domain.value_objects import DUTCommandInfo, HardwareConfig, TestConfiguration
+from eol_tester.hardware_adapter import create_standalone_hardware_adapter
+from eol_tester.interfaces import TestMode
+from eol_tester.services.hardware_facade import HardwareServiceFacade
+
+from ..conftest import RecordingOutput
+
+pytestmark = pytest.mark.usefixtures("mock_hardware", "fast_profiles", "tmp_results")
+
+
+def _sequence(output: RecordingOutput) -> EOLForceTestSequence:
+    context = ExecutionContext(serial_number="SN1", wip_id="W1")
+    return EOLForceTestSequence(context, output_strategy=output)
+
+
+class _AbortOnLog:
+    """Schedule seq.abort() on the running loop the first time a log line contains a marker."""
+
+    def __init__(self, seq: EOLForceTestSequence, marker: str) -> None:
+        self.lines: List[str] = []
+        self.scheduled_at: Optional[float] = None
+        self._seq = seq
+        self._marker = marker
+        self._loop = asyncio.get_running_loop()
+        self._sink_id = logger.add(self._sink, level="DEBUG")
+
+    def _request_abort(self) -> None:
+        try:
+            self._seq.abort()
+        except AbortError:
+            pass
+
+    def _sink(self, message: Any) -> None:
+        text = message.record["message"]
+        self.lines.append(text)
+        if self._marker in text and self.scheduled_at is None:
+            self.scheduled_at = time.monotonic()
+            self._loop.call_soon(self._request_abort)
+
+    def close(self) -> None:
+        logger.remove(self._sink_id)
+
+
+@pytest.fixture
+def abort_on_log():
+    watchers: List[_AbortOnLog] = []
+
+    def install(seq: EOLForceTestSequence, marker: str) -> _AbortOnLog:
+        watcher = _AbortOnLog(seq, marker)
+        watchers.append(watcher)
+        return watcher
+
+    yield install
+    for watcher in watchers:
+        watcher.close()
+
+
+def _step_complete(output: RecordingOutput, name: str) -> dict:
+    (event,) = [e for e in output.named("step_complete") if e["step_name"] == name]
+    return event
+
+
+def _assert_teardown_recorded(output: RecordingOutput) -> None:
+    assert _step_complete(output, "teardown")
+    assert output.named("sequence_complete")
+
+
+def _result_jsons(tmp_results: Path) -> List[Path]:
+    return sorted(tmp_results.rglob("SN1_*.json"))
+
+
+async def test_mock_run_completes(recording_output: RecordingOutput, tmp_results: Path) -> None:
+    result = await _sequence(recording_output)._execute()
+
+    assert result["passed"] is True
+    assert len(recording_output.named("measurement")) == 2
+    _assert_teardown_recorded(recording_output)
+    assert _result_jsons(tmp_results)
+
+
+async def test_abort_stops_in_force_loop(
+    recording_output: RecordingOutput, tmp_results: Path, abort_on_log
+) -> None:
+    seq = _sequence(recording_output)
+    lines = abort_on_log(seq, "Measuring at position").lines
+
+    await seq._execute()
+
+    assert any("Measuring at position" in line for line in lines)
+    assert not any("Setting temperature to 52.0C" in line for line in lines)
+    assert recording_output.named("measurement") == []
+    force_test = _step_complete(recording_output, "force_test")
+    assert force_test["passed"] is False
+    assert "Abort" in force_test["error"]
+    _assert_teardown_recorded(recording_output)
+    assert _result_jsons(tmp_results) == []
+
+
+async def test_abort_during_setup_boot_wait(
+    recording_output: RecordingOutput, abort_on_log
+) -> None:
+    seq = _sequence(recording_output)
+    watcher = abort_on_log(seq, "Waiting for MCU boot complete signal")
+    lines = watcher.lines
+
+    result = await seq._execute()
+    assert watcher.scheduled_at is not None
+    elapsed = time.monotonic() - watcher.scheduled_at
+
+    assert not any("Starting LMA standby sequence" in line for line in lines)
+    assert not any("Setting temperature to" in line for line in lines)
+    assert not any("Boot complete signal received" in line for line in lines)
+    assert [e for e in recording_output.named("step_start") if e["step_name"] == "force_test"] == []
+    assert result["passed"] is False
+    assert "Abort" in str(result["error"])
+    _assert_teardown_recorded(recording_output)
+    assert elapsed < 3
+
+
+class _FakeMCU:
+    """MCU service stand-in whose class name does not contain 'Mock'."""
+
+    def __init__(self, temperature_offset: float = 0.0, boot_hangs: bool = False) -> None:
+        self.temperature_offset = temperature_offset
+        self.boot_hangs = boot_hangs
+        self.expected = 0.0
+        self.standby = 0.0
+        self.get_temperature_calls = 0
+        self.boot_wait_cancelled = False
+
+    async def get_temperature(self) -> float:
+        self.get_temperature_calls += 1
+        return self.expected + self.temperature_offset
+
+    async def wait_boot_complete(self) -> None:
+        if not self.boot_hangs:
+            return
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            self.boot_wait_cancelled = True
+            raise
+
+    async def set_test_mode(self, mode: TestMode) -> None: ...
+    async def set_upper_temperature(self, temperature: float) -> None: ...
+    async def set_fan_speed(self, speed: int) -> None: ...
+
+    async def start_standby_heating(self, operating_temp: float, standby_temp: float) -> None:
+        self.expected = operating_temp
+        self.standby = standby_temp
+
+    async def start_standby_cooling(self) -> None:
+        self.expected = self.standby
+
+    async def set_operating_temperature(self, temperature: float) -> None:
+        self.expected = temperature
+
+
+def _facade(mcu: _FakeMCU) -> HardwareServiceFacade:
+    loadcell = AsyncMock()
+    loadcell.read_peak_force.return_value = 1.5
+    return HardwareServiceFacade(
+        robot_service=AsyncMock(),
+        mcu_service=mcu,  # type: ignore[arg-type]
+        loadcell_service=loadcell,
+        power_service=AsyncMock(),
+        digital_io_service=AsyncMock(),
+    )
+
+
+@pytest.fixture
+def instant_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
+    real_sleep = asyncio.sleep
+
+    async def sleep(delay: float, result: Any = None) -> Any:
+        return await real_sleep(0, result)
+
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+
+
+@pytest.mark.parametrize("abort_on_call", [2, 3, 5])
+async def test_verify_temperature_retry_aborts(abort_on_call: int, instant_sleep: None) -> None:
+    mcu = _FakeMCU(temperature_offset=10.0)
+    mcu.expected = 50.0
+    facade = _facade(mcu)
+    calls = 0
+
+    def abort_check() -> None:
+        nonlocal calls
+        calls += 1
+        if calls >= abort_on_call:
+            raise AbortError("Abort requested")
+
+    with pytest.raises(AbortError):
+        await facade.verify_mcu_temperature(
+            50.0, TestConfiguration(), abort_check=abort_check
+        )
+
+    assert mcu.get_temperature_calls == abort_on_call - 2
+    assert mcu.get_temperature_calls < 11
+
+
+async def test_boot_wait_timeout_unchanged() -> None:
+    mcu = _FakeMCU(boot_hangs=True)
+    facade = _facade(mcu)
+    config = TestConfiguration(
+        timeout_seconds=0.3,
+        poweron_stabilization=0,
+        mcu_boot_complete_stabilization=0,
+        mcu_command_stabilization=0,
+    )
+
+    for abort_check in (None, lambda: None):
+        mcu.boot_wait_cancelled = False
+        with pytest.raises(asyncio.TimeoutError):
+            await facade.setup_test(config, HardwareConfig(), abort_check=abort_check)
+        assert mcu.boot_wait_cancelled
+
+
+async def test_abort_flag_unused_without_request(instant_sleep: None) -> None:
+    mcu = _FakeMCU()
+    facade = _facade(mcu)
+    config = TestConfiguration(
+        temperature_list=[38.0],
+        stroke_positions=[20000.0],
+        poweron_stabilization=0,
+        mcu_boot_complete_stabilization=0,
+        mcu_command_stabilization=0,
+        robot_move_stabilization=0,
+        robot_standby_stabilization=0,
+    )
+    hardware_config = HardwareConfig()
+    dut = DUTCommandInfo(dut_id="W1", model_number="M", serial_number="SN1")
+
+    await facade.verify_mcu_temperature(0.0, config)
+
+    await facade.set_lma_standby(config, hardware_config)
+
+    await facade.setup_test(config, hardware_config)
+    measurements, cycles = await facade.perform_force_test_sequence(config, hardware_config, dut)
+    assert len(cycles) == config.repeat_count
+
+    adapter = create_standalone_hardware_adapter(
+        test_config=config, hardware_config=load_hardware_config()
+    )
+    await adapter.setup_test()
+    await adapter.execute_force_test(dut)
