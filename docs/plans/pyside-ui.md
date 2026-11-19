@@ -11,7 +11,11 @@
 
 1. UI 기술은 PySide6 데스크톱 앱이다.
 2. 원본 패키지는 이 저장소에 복사한다. submodule이나 pip 의존성으로 두지 않는다.
-3. 즉시 중단을 위해 원본의 force test 반복 루프에 `check_abort`를 넣어도 된다. 원본 변경은 이것과 그 연결에 필요한 최소 변경뿐이다.
+3. 즉시 중단을 위해 원본에 `check_abort`를 넣어도 된다. 넣을 수 있는 곳은 두 군데다.
+   - force test 반복 루프
+   - setup 경로: `setup_test`와 그 안의 LMA standby, MCU 부팅 대기, `verify_mcu_temperature`의 온도 확인 재시도 루프. 플랜 리뷰 뒤 사용자가 허용했다.
+
+   원본 변경은 이것과 그 연결에 필요한 최소 변경뿐이다.
 4. 화면은 사용자가 승인한 미리보기(https://claude.ai/artifact/XGs6b1XLmSogFjqoazuRak)를 따른다. 실행 화면, 설정 화면(테스트 파라미터 / 하드웨어 연결), 판정 완료 화면의 3개다. 스타일은 밝은 회색 바탕 #F3F4F6, 흰 카드, 강조 #2B59C3, PASS #0F7B5F, FAIL #C2410C, 글꼴 IBM Plex Sans KR / IBM Plex Mono(없으면 시스템 글꼴)이고 QSS로 구현한다.
 
 ## 확인한 사실 (원본 커밋 2b22b622cbba09e18b2f0c7588773c6ce083930d, station-service-sdk 2.1.0)
@@ -31,7 +35,18 @@
 ## 스스로 정한 결정과 이유
 
 1. **배치.** 원본을 저장소 루트의 `eol_tester/`에 복사해 import 이름을 그대로 둔다. UI는 `eol_ui/`, 시험은 `tests/`에 둔다. 의존성과 실행은 루트 `pyproject.toml`과 uv로 관리하고, Python은 3.12로 고정한다. 원본 안의 `pyproject.toml`, `main.py` 등도 원본 그대로 둔다.
-2. **복사 커밋과 수정 커밋을 나눈다.** 첫 커밋은 원본 복사(결과 샘플, `__pycache__`, DLL 제외)다. 둘째 커밋은 `check_abort` 추가이고 `sequence.py`, `hardware_adapter.py`, `services/hardware_facade.py` 세 파일만 바꾼다. 연결은 `execute_force_test(..., abort_check=self.check_abort)` → facade의 `perform_force_test_sequence(..., abort_check=None)`로 넘기는 방식을 권한다. 기본값을 None으로 두면 다른 호출자는 영향을 받지 않는다. 검사 지점은 반복 시작, 온도 시작, 위치 시작이다.
+2. **복사 커밋과 수정 커밋을 나눈다.** 첫 커밋은 원본 복사(결과 샘플, `__pycache__`, DLL 제외)다. 둘째 커밋은 `check_abort` 추가이고 `sequence.py`, `hardware_adapter.py`, `services/hardware_facade.py` 세 파일만 바꾼다.
+
+   연결은 시퀀스의 `self.check_abort`를 `abort_check` 콜백으로 adapter를 거쳐 facade에 넘기는 방식을 권한다. 콜백을 받는 facade 메서드는 `perform_force_test_sequence`, `setup_test`, `set_lma_standby`, `verify_mcu_temperature`이고, 모두 기본값이 None인 키워드 인자로 받는다. 기본값을 None으로 두면 다른 호출자는 영향을 받지 않는다. 시퀀스 쪽에서는 `run()`이 `execute_force_test(..., abort_check=self.check_abort)`를, `setup()`이 `setup_test(abort_check=self.check_abort)`를 부른다.
+
+   검사 지점은 다음과 같다.
+   - force test: 반복 시작, 온도 시작, 위치 시작. 각 온도의 `verify_mcu_temperature` 호출에도 콜백을 넘긴다.
+   - `setup_test`: 각 단계 사이(전원 ON 뒤, 부팅 대기 뒤, 테스트 모드 설정 뒤)
+   - MCU 부팅 대기: `wait_boot_complete()`를 한 번에 await하는 대신 task로 돌리고, 짧은 주기(0.2초 이하)로 콜백을 확인한다. 중단되면 task를 취소한다. 기존 timeout은 그대로 지킨다.
+   - `set_lma_standby`: 각 MCU 명령과 로봇 이동 사이
+   - `verify_mcu_temperature`: 시작할 때(mock 생략 분기보다 앞)와 재시도마다
+
+   setup 안의 중단은 원본대로 `SetupError`로 바뀌어 보고된다. 이 예외 처리는 고치지 않고, 판정은 UI가 한다(결정 3).
 3. **중단 판정은 UI가 한다.** 원본이 중단을 FAIL이나 오류로 보고하므로, UI가 "중단을 요청했고 PASS가 아니다"이면 `ABORTED`로 판정한다. 원본의 `run()` 예외 처리는 고치지 않는다. 원본 변경을 최소로 하기 위해서다.
 4. **판정은 네 가지다.** `ABORTED`(위 조건), `ERROR`(setup 실패, `result.error`, 또는 force_test `step_complete`에 error가 있음), `PASS`(`passed`), `FAIL`(force_test가 오류 없이 끝났고 `passed`가 False)이다. 미리보기에는 PASS/FAIL만 있으므로 ABORTED/ERROR 배너는 같은 틀에 중립색과 FAIL색으로 만든다.
 5. **진행률은 로그 파서로 계산한다.** 원본에 progress 이벤트를 넣지 않는다(원본 변경 최소). 파서는 `eol_ui/progress.py` 한 모듈에 모으고, Qt 없이 시험한다. 전체 % 는 setup 구간 0→10, force test 구간 10→95(완료 측정 수 / 전체 측정 수), teardown 95, 끝 100으로 계산한다. 측정 완료는 `Force:` 줄로 센다.
@@ -48,7 +63,7 @@
 12. **실행 중 창 닫기.** 닫으면 중단을 요청하고, teardown(전원 OFF, 로봇 복귀)이 끝난 뒤 닫는다. 장비 안전을 위해서다.
 13. **시험 방식.** 시험은 mock 하드웨어와 빠른 프로파일(timing 0, 작은 위치)로 돌린다. `eol_tester.config.HARDWARE_CONFIG_FILE`, `TEST_PROFILES_DIR`, `eol_tester.sequence.ResultRepository`를 tmp 경로로 바꾸는 공용 fixture를 `tests/conftest.py`에 두어 저장소 파일을 건드리지 않는다. 중단 시험은 시간을 기다리는 대신 첫 `Measuring at position` 로그를 보고 중단을 거는 결정적 방식으로 한다.
 14. **글꼴은 번들하지 않는다.** QSS의 font-family에 대체 글꼴 목록을 둔다.
-15. **CI는 추가하지 않는다.** 저장소에 CI가 없다. 제안만 아래 "사용자가 정해야 하는 결정"에 적는다.
+15. **CI는 추가하지 않는다.** 저장소에 CI가 없다. 사용자도 추가하지 않기로 했다(아래 "사용자 결정").
 
 ## 작업
 
@@ -71,16 +86,19 @@
 
 ## 범위 밖
 
-- 원본 시퀀스 동작의 다른 수정. 예: `run()`의 중단 예외 처리, setup 안의 추가 `check_abort`, `HardwareConfig.to_dict()` 손실 수정.
+- 원본 시퀀스 동작의 다른 수정. 예: `run()`의 중단 예외 처리, setup의 `AbortError`→`SetupError` 변환, `HardwareConfig.to_dict()` 손실 수정. 허용된 `check_abort` 추가와 그 연결만 한다.
 - manifest의 manual_commands(수동 조작) UI.
 - station-service(MES) 연동과 CLI 실행 방식의 변경.
 - 실장비(Windows)에서의 확인. 시험은 Linux mock으로만 한다.
 - 설치 프로그램과 패키징(PyInstaller 등), CI 추가.
 
-## 사용자가 정해야 하는 결정
+## 사용자 결정
 
-1. **Ajinextek DLL(`driver/ajinextek/lib/32Bit|64Bit`, 약 34MB, 독점 바이너리)을 커밋할지.** 저장소가 public이라 재배포 라이선스가 불확실하다. 플랜의 기본은 커밋하지 않는 것이다(`.gitkeep`만 유지). 원본 `axl_wrapper`는 lib 폴더에 DLL이 없으면 시스템 PATH의 `AXL.dll`을 찾으므로, Ajinextek 드라이버를 설치한 Windows 장비에서는 그대로 동작할 수 있다. 라이선스를 확인한 뒤 커밋하려면 별도 작업으로 추가한다.
-2. **setup 단계의 중단 지연.** 허용 범위(force test 루프) 밖이라 setup에는 `check_abort`를 더하지 않는다. setup의 마지막 단계(전원 ON, MCU 부팅 대기 최대 timeout 60초, 온도 확인 재시도)에서 건 중단은 그 단계가 끝난 뒤 `run()` 시작에서 멈춘다. 실장비에서는 수십 초가 걸릴 수 있다. 줄이려면 `setup_test`와 `verify_mcu_temperature` 안에도 `check_abort`를 넣도록 허용해야 한다.
-3. **추적 파일이 바뀌는 문제.** Mock 전환, 하드웨어 설정 편집, 프로파일 저장은 원본이 읽는 위치(`eol_tester/config/hardware_config.yaml`, `eol_tester/config/test_profiles/`)에 쓴다. 이 파일들은 git이 추적한다. 개발 PC에서 Mock을 켜면 `git status`에 변경이 생긴다. 바꾸려면 로컬 덮어쓰기 파일을 gitignore로 두는 방식이 필요하다. 그러려면 원본이 읽는 경로를 바꾸게 되므로 원본 변경 범위를 넘는다.
-4. **CI 제안.** GitHub Actions(ubuntu, uv, `QT_QPA_PLATFORM=offscreen uv run pytest`)를 추가할지. 이 플랜에는 넣지 않았다.
-5. **병합 보류 안내.** `seq-import`가 새로 만드는 `tests/conftest.py`는 orch가 검증 설정 파일로 분류해 병합 전에 확인을 요청한다. 새로 만드는 파일이고 검증을 약하게 하는 변경은 아니다. 이 플랜에 검증을 약하게 하는 작업(검증 단계 삭제, 시간 제한 증가, `paths` 축소)은 없다.
+플랜 리뷰 때 사용자가 답한 내용이다.
+
+1. **Ajinextek DLL(`driver/ajinextek/lib/32Bit|64Bit`, 약 34MB, 독점 바이너리)은 커밋하지 않는다.** `.gitkeep`만 유지한다. 원본 `axl_wrapper`는 lib 폴더에 DLL이 없으면 시스템 PATH의 `AXL.dll`을 찾는다. 그래서 Ajinextek 드라이버를 설치한 Windows 장비에서는 그대로 동작할 수 있다.
+2. **setup 단계에도 `check_abort`를 넣는다.** 범위는 `setup_test`와 그 안의 MCU 부팅 대기, LMA standby, `verify_mcu_temperature`의 재시도 루프다. 연결 방식은 "스스로 정한 결정" 2번에 있다. 이 결정으로 `seq-import`의 원본 수정 범위가 setup 경로까지 넓어졌다. 바꾸는 파일은 그대로 세 개다.
+3. **추적 설정 파일은 원본이 읽는 위치에 직접 쓴다.** Mock 전환, 하드웨어 설정 편집, 프로파일 저장이 `eol_tester/config/hardware_config.yaml`과 `eol_tester/config/test_profiles/`에 쓴다. 그래서 개발 PC에서 Mock을 켜면 `git status`에 변경이 생기는데, 이것을 받아들인다.
+4. **CI는 추가하지 않는다.**
+5. **`tests/conftest.py` 병합 보류는 확인했다.** `seq-import`가 새로 만드는 이 파일은 orch가 검증 설정 파일로 분류한다. 신규 파일이고 검증을 약하게 하지 않는 것으로 처리한다. 이 플랜에 검증을 약하게 하는 작업(검증 단계 삭제, 시간 제한 증가, `paths` 축소)은 없다.
+6. **병합 방식.** 이 저장소는 direct 방식으로 병합한다. 사용자는 4절 확인을 통과한 작업 PR의 병합을 오케스트레이터에게 위임했다.
