@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, List, Optional, cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -15,7 +15,7 @@ from eol_tester import EOLForceTestSequence
 from eol_tester.config import load_hardware_config
 from eol_tester.domain.value_objects import DUTCommandInfo, HardwareConfig, TestConfiguration
 from eol_tester.hardware_adapter import create_standalone_hardware_adapter
-from eol_tester.interfaces import TestMode
+from eol_tester.interfaces import MCUService, TestMode
 from eol_tester.services.hardware_facade import HardwareServiceFacade
 
 from ..conftest import RecordingOutput
@@ -29,8 +29,6 @@ def _sequence(output: RecordingOutput) -> EOLForceTestSequence:
 
 
 class _AbortOnLog:
-    """Schedule seq.abort() on the running loop the first time a log line contains a marker."""
-
     def __init__(self, seq: EOLForceTestSequence, marker: str) -> None:
         self.lines: List[str] = []
         self.scheduled_at: Optional[float] = None
@@ -132,9 +130,8 @@ async def test_abort_during_setup_boot_wait(
     assert elapsed < 3
 
 
+# verify_mcu_temperature skips verification when the MCU class name contains "Mock".
 class _FakeMCU:
-    """MCU service stand-in whose class name does not contain 'Mock'."""
-
     def __init__(self, temperature_offset: float = 0.0, boot_hangs: bool = False) -> None:
         self.temperature_offset = temperature_offset
         self.boot_hangs = boot_hangs
@@ -176,7 +173,7 @@ def _facade(mcu: _FakeMCU) -> HardwareServiceFacade:
     loadcell.read_peak_force.return_value = 1.5
     return HardwareServiceFacade(
         robot_service=AsyncMock(),
-        mcu_service=mcu,  # type: ignore[arg-type]
+        mcu_service=cast(MCUService, mcu),
         loadcell_service=loadcell,
         power_service=AsyncMock(),
         digital_io_service=AsyncMock(),

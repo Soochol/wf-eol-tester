@@ -1,5 +1,3 @@
-"""Shared fixtures. Only this file defines fixtures common to every test package."""
-
 from __future__ import annotations
 
 import copy
@@ -22,7 +20,6 @@ _DEVICES = ("robot", "loadcell", "mcu", "power", "digital_io")
 
 @pytest.fixture
 def mock_hardware(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """hardware_config.yaml with every device on the mock driver."""
     data = yaml.safe_load(eol_config.HARDWARE_CONFIG_FILE.read_text(encoding="utf-8"))
     for device in _DEVICES:
         data[device]["model"] = "mock"
@@ -34,7 +31,6 @@ def mock_hardware(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 @pytest.fixture
 def fast_profiles(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """test_profiles/ whose default.yaml has zero timing and a 2-temperature, 1-position matrix."""
     original = eol_config.TEST_PROFILES_DIR / "default.yaml"
     profile: Dict[str, Any] = copy.deepcopy(yaml.safe_load(original.read_text(encoding="utf-8")))
     profile["timing"] = {key: 0 for key in profile["timing"]}
@@ -52,7 +48,6 @@ def fast_profiles(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 @pytest.fixture
 def tmp_results(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Pin the sequence's ResultRepository to a tmp base_dir."""
     base_dir = tmp_path / "results"
     real_repository = eol_sequence.ResultRepository
     monkeypatch.setattr(
@@ -64,8 +59,6 @@ def tmp_results(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 class RecordingOutput:
-    """OutputStrategy that records every call as (method name, bound arguments)."""
-
     def __init__(self) -> None:
         self.events: List[Tuple[str, Dict[str, Any]]] = []
 

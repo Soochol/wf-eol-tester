@@ -246,7 +246,6 @@ class HardwareServiceFacade:
         timeout_seconds: float,
         abort_check: Optional[AbortCheck],
     ) -> None:
-        """Wait for MCU boot, polling abort_check; raises asyncio.TimeoutError on timeout."""
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout_seconds
         task = asyncio.ensure_future(self._mcu.wait_boot_complete())
