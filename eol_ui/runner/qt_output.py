@@ -21,7 +21,7 @@ from .events import (
 
 
 class QtOutputStrategy(QObject):
-    sdk_event = Signal(object)
+    inbox = Signal(object)
 
     def __init__(self, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
@@ -37,9 +37,12 @@ class QtOutputStrategy(QObject):
     def status_times(self) -> Mapping[str, float]:
         return dict(self._status_times)
 
+    def post(self, item: object) -> None:
+        self.inbox.emit(item)
+
     def _publish(self, event: SdkEvent) -> None:
         self._recorded.append(event)
-        self.sdk_event.emit(event)
+        self.post(event)
 
     def log(self, level: str, message: str, **extra: Any) -> None:
         self._publish(LogEvent(level=level, message=message, extra=freeze(extra)))

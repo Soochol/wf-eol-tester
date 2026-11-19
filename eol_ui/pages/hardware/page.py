@@ -243,9 +243,8 @@ class HardwarePage(QWidget):
         self._message.setText("연결을 시험하는 중입니다...")
         self._sync_enabled()
         self.busy_changed.emit(True)
-        thread = ConnectionTestThread(self._store, self)
+        thread = ConnectionTestThread(self._store)
         thread.done.connect(self._on_test_done)
-        thread.finished.connect(thread.deleteLater)
         self._thread = thread
         thread.start()
 
