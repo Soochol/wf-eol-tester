@@ -23,7 +23,7 @@ def _parse_float(raw: Any) -> float:
         raise ValueError("숫자가 아니다")
     try:
         value = float(raw.strip() if isinstance(raw, str) else raw)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         raise ValueError("숫자가 아니다") from None
     if not math.isfinite(value):
         raise ValueError("숫자가 아니다")
@@ -94,7 +94,8 @@ class SettingsModel:
         value = spec.default
         if location is not None:
             section, key = location
-            value = (self._profile.get(section) or {}).get(key, spec.default)
+            found = (self._profile.get(section) or {}).get(key)
+            value = spec.default if found is None else found
         return _PARSERS[spec.kind](value)
 
     def baseline(self, name: str) -> Value:
@@ -180,8 +181,9 @@ class SettingsModel:
             if location is None:
                 continue
             section, key = location
-            profile.setdefault(section, {})[key] = self._parsed(changed)[0]
-        metadata = profile.setdefault("metadata", {})
+            profile[section] = profile.get(section) or {}
+            profile[section][key] = self._parsed(changed)[0]
+        metadata = profile["metadata"] = profile.get("metadata") or {}
         metadata["profile_name"] = name
         metadata["created_at"] = datetime.now().isoformat()
         metadata["created_by"] = "eol_ui"

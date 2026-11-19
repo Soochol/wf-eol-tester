@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import math
 from pathlib import Path
 from typing import Any, Optional
 
@@ -33,8 +35,18 @@ MOCK_BACKUP_KEY = "ui_real_models"
 ConnectionResult = dict[str, tuple[bool, Optional[str]]]
 
 
+def _describe(error: BaseException) -> str:
+    return str(error) or type(error).__name__
+
+
+def _all_failed(message: str) -> ConnectionResult:
+    return {device: (False, message) for device in DEVICES}
+
+
 def _coerce(kind: type, raw: Any) -> Any:
     if kind is str:
+        if raw is None or isinstance(raw, bool):
+            raise ValueError("문자열이 아니다")
         text = str(raw).strip()
         if not text:
             raise ValueError("비어 있을 수 없다")
@@ -43,9 +55,9 @@ def _coerce(kind: type, raw: Any) -> Any:
         raise ValueError("정수가 아니다")
     try:
         number = float(raw)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         raise ValueError("정수가 아니다") from None
-    if number != int(number) or number < 0:
+    if not math.isfinite(number) or number != int(number) or number < 0:
         raise ValueError("0 이상의 정수여야 한다")
     return int(number)
 
@@ -96,29 +108,53 @@ class HardwareStore:
         )
 
     async def connection_test(self) -> ConnectionResult:
-        adapter = None
-        connect_error: Optional[str] = None
         try:
-            adapter = create_standalone_hardware_adapter(
-                hardware_config=eol_config.load_hardware_config()
-            )
+            self._read_saved_file()
+            hardware_config = eol_config.load_hardware_config()
+            adapter = create_standalone_hardware_adapter(hardware_config=hardware_config)
+        except Exception as error:
+            return _all_failed(_describe(error))
+        try:
+            return await self._connect_and_report(adapter)
+        finally:
             try:
-                await adapter.connect()
+                await adapter.disconnect()
             except Exception as error:
-                connect_error = str(error) or type(error).__name__
+                logger.warning(f"connection_test disconnect failed: {error}")
+
+    def _read_saved_file(self) -> None:
+        try:
+            data = yaml.safe_load(self.path().read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError) as error:
+            raise ValueError(f"설정 파일을 읽지 못했다: {error}") from error
+        if not isinstance(data, dict) or not data:
+            raise ValueError("설정 파일이 비어 있거나 올바르지 않다")
+
+    @staticmethod
+    async def _connect_and_report(adapter: Any) -> ConnectionResult:
+        facade = adapter._facade
+        services = {
+            "robot": facade.robot_service,
+            "loadcell": facade.loadcell_service,
+            "mcu": facade.mcu_service,
+            "power": facade.power_service,
+            "digital_io": facade.digital_io_service,
+        }
+        outcomes = await asyncio.gather(
+            *(service.connect() for service in services.values()), return_exceptions=True
+        )
+        errors = {
+            device: _describe(outcome)
+            for device, outcome in zip(services, outcomes)
+            if isinstance(outcome, BaseException)
+        }
+        try:
             status = await adapter.get_hardware_status()
         except Exception as error:
-            message = str(error) or type(error).__name__
-            return {device: (False, message) for device in DEVICES}
-        finally:
-            if adapter is not None:
-                try:
-                    await adapter.disconnect()
-                except Exception as error:
-                    logger.warning(f"connection_test disconnect failed: {error}")
+            return {device: (False, errors.get(device, _describe(error))) for device in DEVICES}
         return {
             device: (True, None)
-            if status.get(device)
-            else (False, connect_error or "연결되지 않았다")
+            if status.get(device) and device not in errors
+            else (False, errors.get(device, "연결되지 않았다"))
             for device in DEVICES
         }

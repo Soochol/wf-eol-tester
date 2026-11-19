@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import copy
 import shutil
 from pathlib import Path
@@ -234,3 +235,77 @@ async def test_connection_test_reports_adapter_failure(
     monkeypatch.setattr("eol_ui.settings.hardware_store.create_standalone_hardware_adapter", broken)
     result = await HardwareStore().connection_test()
     assert all(value == (False, "boom") for value in result.values())
+
+
+async def test_connection_test_isolates_failing_device(
+    mock_hardware: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from eol_tester.hardware.mock import MockLoadCellService, MockPowerService
+
+    async def failing_connect(self: Any) -> None:
+        raise ConnectionError("COM8 not found")
+
+    real_power_connect = MockPowerService.connect
+
+    async def slow_power_connect(self: Any) -> None:
+        await asyncio.sleep(0.05)
+        await real_power_connect(self)
+
+    connected: list[Any] = []
+    real_disconnect = MockPowerService.disconnect
+
+    async def tracking_disconnect(self: Any) -> None:
+        await real_disconnect(self)
+        connected.append(await self.is_connected())
+
+    monkeypatch.setattr(MockLoadCellService, "connect", failing_connect)
+    monkeypatch.setattr(MockPowerService, "connect", slow_power_connect)
+    monkeypatch.setattr(MockPowerService, "disconnect", tracking_disconnect)
+
+    result = await HardwareStore().connection_test()
+
+    assert result["loadcell"] == (False, "COM8 not found")
+    for device in ("robot", "mcu", "power", "digital_io"):
+        assert result[device] == (True, None)
+    assert connected == [False]
+
+
+@pytest.mark.parametrize("content", ["robot: [unclosed", "", "- just\n- a list\n"])
+async def test_connection_test_unreadable_config_fails_all(
+    mock_hardware: Path, content: str
+) -> None:
+    store = HardwareStore()
+    mock_hardware.write_text(content, encoding="utf-8")
+    result = await store.connection_test()
+    assert set(result) == {"robot", "loadcell", "mcu", "power", "digital_io"}
+    assert all(not ok and error for ok, error in result.values())
+
+
+def test_non_finite_and_huge_inputs_are_value_errors(
+    real_hardware: Path, model: SettingsModel
+) -> None:
+    store = HardwareStore()
+    for raw in ("inf", "nan", "1e999", 10**400, None):
+        with pytest.raises(ValueError):
+            store.set_value("robot", "axis_id", raw)
+    for raw in (None, True):
+        with pytest.raises(ValueError):
+            store.set_value("loadcell", "port", raw)
+    model.set_value("repeat_count", 10**400)
+    assert model.error("repeat_count")
+
+
+def test_null_profile_values_use_defaults_and_save(fast_profiles: Path) -> None:
+    path = fast_profiles / "default.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["hardware"]["voltage"] = None
+    data["execution"] = None
+    data["metadata"] = None
+    path.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    model = SettingsModel()
+    model.load("default")
+    assert model.baseline("voltage") == 18.0
+    model.set_value("repeat_count", 3)
+    model.save_as("nulls")
+    assert eol_config.load_test_profile("nulls")["execution"]["repeat_count"] == 3
