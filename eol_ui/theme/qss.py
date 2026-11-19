@@ -39,6 +39,17 @@ QPushButton[danger="true"] {{ color: {t.FAIL}; border-color: {t.FAIL}; }}
 QPushButton[danger="true"]:disabled {{ color: {t.UNKNOWN}; border-color: {t.BORDER}; }}
 QPushButton[tab="true"] {{ border: none; border-radius: 0; background: transparent; padding: 8px 16px; }}
 QPushButton[tab="true"]:checked {{ color: {t.ACCENT}; border-bottom: 2px solid {t.ACCENT}; font-weight: 600; }}
+QLabel[badge="CHANGED"] {{ background: {t.ACCENT}; color: white; border-radius: 8px; padding: 1px 8px; font-size: 11px; font-weight: 600; }}
+QLabel[role="hint"] {{ color: {t.TEXT_MUTED}; font-size: 12px; }}
+QLabel[role="field-error"] {{ color: {t.FAIL}; font-size: 12px; }}
+QLabel[role="counts"] {{ background: {t.WARN_ROW}; color: {t.WARN_TEXT}; border-radius: 10px; padding: 3px 10px; font-weight: 600; }}
+QLineEdit[changed="true"] {{ border-color: {t.ACCENT}; }}
+QLineEdit[error="true"], QWidget[error="true"] {{ border: 1px solid {t.FAIL}; border-radius: 6px; }}
+QLineEdit:disabled {{ color: {t.UNKNOWN}; background: {t.BACKGROUND}; }}
+QPushButton[side="true"] {{ text-align: left; border: none; background: transparent; padding: 10px 14px; min-width: 130px; }}
+QPushButton[side="true"]:checked {{ background: {t.ACCENT_SOFT}; color: {t.ACCENT}; font-weight: 600; }}
+QPushButton[switch="true"]:checked {{ background: {t.ACCENT}; color: white; border-color: {t.ACCENT}; }}
+QPushButton[chip-remove="true"] {{ padding: 0 6px; border-radius: 9px; min-width: 18px; }}
 QProgressBar {{ background: {t.BORDER}; border: none; border-radius: 4px; max-height: 8px; min-height: 8px; }}
 QProgressBar::chunk {{ background: {t.ACCENT}; border-radius: 4px; }}
 QProgressBar[range="PASS"]::chunk {{ background: {t.PASS}; }}

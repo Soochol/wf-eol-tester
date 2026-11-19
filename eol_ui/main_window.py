@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 
 import eol_tester
 from eol_tester.config import load_hardware_config
-from eol_ui.pages import ResultPage, RunPage
+from eol_ui.pages import ResultPage, RunPage, SettingsPage
 from eol_ui.pages.run import CLOSE_NOTICE
 from eol_ui.progress import ProgressState
 from eol_ui.runner import RunOutcome, SequenceRunner
@@ -51,9 +51,7 @@ class MainWindow(QMainWindow):
 
         self.run_page = RunPage(self.runner)
         self.result_page = ResultPage()
-        self.settings_page = QWidget()
-        self.settings_page.setObjectName("settings-page")
-        QVBoxLayout(self.settings_page).addWidget(label("설정 화면은 다음 작업에서 추가됩니다.", "muted"))
+        self.settings_page = SettingsPage()
 
         self._run_stack = QStackedWidget()
         self._run_stack.addWidget(self.run_page)
@@ -81,7 +79,30 @@ class MainWindow(QMainWindow):
         self.result_page.back_requested.connect(self.show_run_page)
         self.runner.progress.connect(self._on_progress)
         self.runner.finished.connect(self._on_finished)
+        self._connect_settings()
         self.refresh_mock_badge()
+
+    def _connect_settings(self) -> None:
+        parameters = self.settings_page.parameters
+        hardware = self.settings_page.hardware
+        self.run_page.refresh_profiles()
+        self.run_page.set_profile(parameters.profile_name)
+        self.run_page.profile_changed.connect(parameters.select_profile)
+        parameters.profile_changed.connect(self.run_page.set_profile)
+        parameters.profiles_changed.connect(self.run_page.refresh_profiles)
+        parameters.profiles_changed.connect(
+            lambda: self.run_page.set_profile(parameters.profile_name)
+        )
+        parameters.applied.connect(self._on_applied)
+        self.run_page.running_changed.connect(hardware.set_running)
+        hardware.set_running(self.runner.is_running)
+        hardware.busy_changed.connect(self.run_page.set_hardware_busy)
+        hardware.mock_changed.connect(lambda _: self.refresh_mock_badge())
+        hardware.connection_tested.connect(self._paint_devices)
+
+    def _on_applied(self, parameters: object, count: int) -> None:
+        self.run_page.set_pending_parameters(parameters)
+        self.run_page.set_applied_count(count)
 
     def _build_header(self) -> QFrame:
         header = QFrame()
@@ -149,6 +170,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if not self.runner.is_running:
+            self.settings_page.hardware.shutdown()
             super().closeEvent(event)
             return
         self._closing = True
