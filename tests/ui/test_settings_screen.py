@@ -262,7 +262,7 @@ def test_every_manifest_parameter_has_a_field():
 
 def test_mock_toggle_updates_badge(real_hardware, window):
     original = read_models(real_hardware)
-    assert "mock" not in original.values()
+    assert set(original.values()) != {"mock"}
     window.refresh_mock_badge()
     assert window.mock_badge.isHidden()
 
@@ -289,6 +289,18 @@ def test_hardware_edit_and_save(real_hardware, window):
     assert data["loadcell"]["port"] == "COM5"
     assert data["mcu"]["baudrate"] == 57600
     assert data["loadcell"]["parity"] == "even"
+
+
+def test_hardware_shows_default_module_numbers_and_saves_without_them(real_hardware, window):
+    assert hardware(window).edit("digital_io", "input_module_no").text() == "0"
+    assert hardware(window).edit("digital_io", "output_module_no").text() == "1"
+
+    hardware(window).edit("loadcell", "port").setText("COM5")
+    hardware(window).save_button.click()
+
+    digital_io = yaml.safe_load(real_hardware.read_text(encoding="utf-8"))["digital_io"]
+    assert "input_module_no" not in digital_io
+    assert "output_module_no" not in digital_io
 
 
 def test_hardware_save_rejects_invalid_value(real_hardware, window):

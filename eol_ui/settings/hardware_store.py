@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import math
 from pathlib import Path
 from typing import Any, Optional
@@ -78,7 +79,13 @@ class HardwareStore:
         return self._data[device]["model"]
 
     def get(self, device: str, key: str) -> Any:
-        return self._data[device][key]
+        section = self._data[device]
+        if key in section:
+            return section[key]
+        config = getattr(HardwareConfig.from_dict(self._data), device)
+        if key not in {field.name for field in dataclasses.fields(config)}:
+            raise KeyError(key)
+        return getattr(config, key)
 
     def set_value(self, device: str, key: str, raw: Any) -> None:
         kind = EDITABLE[device][key]
@@ -89,11 +96,12 @@ class HardwareStore:
 
     def set_mock(self, enabled: bool) -> None:
         if enabled:
-            backup = dict(self._data.get(MOCK_BACKUP_KEY) or {})
+            current = {device: self._data[device]["model"] for device in DEVICES}
+            if any(model != "mock" for model in current.values()):
+                backup = current
+            else:
+                backup = dict(self._data.get(MOCK_BACKUP_KEY) or {})
             for device in DEVICES:
-                current = self._data[device]["model"]
-                if current != "mock":
-                    backup[device] = current
                 self._data[device]["model"] = "mock"
             self._data[MOCK_BACKUP_KEY] = backup
         else:
