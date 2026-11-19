@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import threading
 from datetime import datetime
+from functools import partial
 from typing import Any, Dict, Optional
 
 from loguru import logger
@@ -30,11 +31,8 @@ class SequenceRunner(QObject):
     progress = Signal(object)
     finished = Signal(object)
 
-    _inbox = Signal(object)
-
     def __init__(self, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
-        self._inbox.connect(self._dispatch, Qt.ConnectionType.QueuedConnection)
         self._lock = threading.Lock()
         self._running = False
         self._thread: Optional[threading.Thread] = None
@@ -68,8 +66,8 @@ class SequenceRunner(QObject):
         self.progress.emit(self._tracker.snapshot())
 
         strategy = self._strategy = QtOutputStrategy()
-        strategy.sdk_event.connect(self._dispatch, Qt.ConnectionType.QueuedConnection)
-        sink_id = logger.add(self._on_loguru_message, level="DEBUG")
+        strategy.inbox.connect(self._dispatch, Qt.ConnectionType.QueuedConnection)
+        sink_id = logger.add(partial(self._forward_log, strategy), level="DEBUG")
         self._thread = threading.Thread(
             target=self._work,
             args=(request, strategy, sink_id),
@@ -109,9 +107,10 @@ class SequenceRunner(QObject):
         except AbortError:
             pass
 
-    def _on_loguru_message(self, message: Any) -> None:
+    @staticmethod
+    def _forward_log(strategy: QtOutputStrategy, message: Any) -> None:
         record = message.record
-        self._inbox.emit(
+        strategy.post(
             LogRecord(
                 timestamp=record["time"].replace(tzinfo=None),
                 level=record["level"].name,
@@ -145,7 +144,7 @@ class SequenceRunner(QObject):
             datetime.now(),
             strategy.status_times,
         )
-        self._inbox.emit(outcome)
+        strategy.post(outcome)
 
     @staticmethod
     def _remove_sink(sink_id: int) -> None:
