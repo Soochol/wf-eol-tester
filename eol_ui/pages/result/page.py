@@ -171,9 +171,12 @@ class ResultPage(QWidget):
             )
             for column, text in enumerate(cells):
                 self._table.setItem(row, column, QTableWidgetItem(text))
-            bar = RangeBar()
-            bar.show_value(record.force, record.min_value, record.max_value)
-            self._table.setCellWidget(row, 3, _padded(bar))
+            if record.force is None:
+                range_cell: QWidget = label(DASH, "muted")
+            else:
+                range_cell = RangeBar()
+                range_cell.show_value(record.force, record.min_value, record.max_value)
+            self._table.setCellWidget(row, 3, _padded(range_cell))
             kind = verdict_kind(record.passed)
             self._table.setCellWidget(row, 4, _padded(Badge(kind, kind), center=True))
 

@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from eol_tester.config import list_test_profiles
+import eol_tester.config as eol_config
 from eol_ui.progress import ProgressState
 from eol_ui.runner import (
     MeasurementEvent,
@@ -31,6 +31,7 @@ from .tiles import LiveTiles
 ABORT_NOTICE = "중단 요청됨 — 현재 측정이 끝나면 Teardown(전원 OFF · 로봇 원점 복귀)을 실행합니다."
 CLOSE_NOTICE = "Teardown 후 종료합니다"
 HARDWARE_BUSY_NOTICE = "연결 테스트 중에는 시작할 수 없습니다."
+NO_PROFILES_NOTICE = "테스트 프로파일이 없어 시작할 수 없습니다. 설정 화면에서 프로파일을 만드세요."
 _TICK_MS = 500
 
 
@@ -121,9 +122,14 @@ class RunPage(QWidget):
     def refresh_profiles(self) -> None:
         current = self._profile.currentText()
         self._profile.clear()
-        self._profile.addItems(list_test_profiles())
+        self._profile.addItems(eol_config.list_test_profiles())
         if current:
             self._profile.setCurrentText(current)
+        if self._profile.count() == 0:
+            self.show_notice(NO_PROFILES_NOTICE)
+        elif self.notice_text() == NO_PROFILES_NOTICE:
+            self.show_notice("")
+        self._sync_buttons()
 
     def set_profile(self, name: str) -> None:
         index = self._profile.findText(name)
@@ -170,6 +176,11 @@ class RunPage(QWidget):
             self._serial.setText(serial_number)
         if not self._can_start():
             return
+        if not self._profile_file_exists():
+            name = self._profile.currentText()
+            self.refresh_profiles()
+            self.show_notice(f"프로파일 '{name}' 파일이 없어 시작할 수 없습니다.")
+            return
         self._prepare_for_run()
         try:
             self._runner.start(self.build_request())
@@ -195,9 +206,13 @@ class RunPage(QWidget):
     def _can_start(self) -> bool:
         return (
             bool(self._serial.text().strip())
+            and self._profile.count() > 0
             and not self._runner.is_running
             and not self._hardware_busy
         )
+
+    def _profile_file_exists(self) -> bool:
+        return (eol_config.TEST_PROFILES_DIR / f"{self._profile.currentText()}.yaml").is_file()
 
     def _prepare_for_run(self) -> None:
         self._log.clear()

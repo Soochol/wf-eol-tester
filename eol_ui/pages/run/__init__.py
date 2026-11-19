@@ -1,3 +1,3 @@
-from .page import ABORT_NOTICE, CLOSE_NOTICE, RunPage
+from .page import ABORT_NOTICE, CLOSE_NOTICE, NO_PROFILES_NOTICE, RunPage
 
-__all__ = ["ABORT_NOTICE", "CLOSE_NOTICE", "RunPage"]
+__all__ = ["ABORT_NOTICE", "CLOSE_NOTICE", "NO_PROFILES_NOTICE", "RunPage"]

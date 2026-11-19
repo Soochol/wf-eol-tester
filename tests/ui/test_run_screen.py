@@ -8,7 +8,7 @@ import yaml
 from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QPushButton
 
 from eol_ui.main_window import MainWindow
-from eol_ui.pages.run import ABORT_NOTICE
+from eol_ui.pages.run import ABORT_NOTICE, NO_PROFILES_NOTICE
 from eol_ui.runner import LogRecord, RunOutcome, Verdict
 from eol_ui.theme import stylesheet
 from eol_ui.widgets import LogPanel
@@ -267,3 +267,32 @@ def test_pending_parameters_and_profile_go_into_request(window):
     assert request.serial_number == "SN9"
     assert request.wip_id is None
     assert request.parameters == {"voltage": 18.0, "test_profile": "default"}
+
+
+def test_start_blocked_when_profile_file_missing(qtbot, window, fast_profiles):
+    outcomes = collect_outcomes(window)
+    child(window, QLineEdit, "serial-input").setText("SN1")
+    profile_file = fast_profiles / f"{window.run_page.profile_name()}.yaml"
+    profile_file.unlink()
+
+    child(window, QPushButton, "start-button").click()
+
+    assert not window.runner.is_running
+    assert outcomes == []
+    assert "default" in window.run_page.notice_text()
+    assert "없" in window.run_page.notice_text()
+    assert not profile_file.exists()
+    assert window.run_page.profile_names() == []
+    assert not child(window, QPushButton, "start-button").isEnabled()
+
+
+def test_start_disabled_without_profiles(window, fast_profiles):
+    child(window, QLineEdit, "serial-input").setText("SN1")
+    start = child(window, QPushButton, "start-button")
+    assert start.isEnabled()
+
+    (fast_profiles / "default.yaml").unlink()
+    window.run_page.refresh_profiles()
+
+    assert not start.isEnabled()
+    assert window.run_page.notice_text() == NO_PROFILES_NOTICE

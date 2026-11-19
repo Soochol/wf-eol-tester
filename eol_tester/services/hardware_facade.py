@@ -243,19 +243,22 @@ class HardwareServiceFacade:
 
     async def _wait_boot_complete(
         self,
-        timeout_seconds: float,
+        timeout_seconds: Optional[float],
         abort_check: Optional[AbortCheck],
     ) -> None:
         loop = asyncio.get_running_loop()
-        deadline = loop.time() + timeout_seconds
+        deadline = None if timeout_seconds is None else loop.time() + timeout_seconds
         task = asyncio.ensure_future(self._mcu.wait_boot_complete())
         try:
             while True:
                 _check(abort_check)
-                remaining = deadline - loop.time()
-                if remaining <= 0:
-                    raise asyncio.TimeoutError()
-                done, _ = await asyncio.wait({task}, timeout=min(_ABORT_POLL_INTERVAL, remaining))
+                poll = _ABORT_POLL_INTERVAL
+                if deadline is not None:
+                    remaining = deadline - loop.time()
+                    if remaining <= 0:
+                        raise asyncio.TimeoutError()
+                    poll = min(poll, remaining)
+                done, _ = await asyncio.wait({task}, timeout=poll)
                 if done:
                     task.result()
                     return

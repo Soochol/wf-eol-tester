@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 from pathlib import Path
-from typing import Any, List, Optional, cast
+from typing import Any, Callable, List, Optional, cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -132,9 +132,19 @@ async def test_abort_during_setup_boot_wait(
 
 # verify_mcu_temperature skips verification when the MCU class name contains "Mock".
 class _FakeMCU:
-    def __init__(self, temperature_offset: float = 0.0, boot_hangs: bool = False) -> None:
+    def __init__(
+        self,
+        temperature_offset: float = 0.0,
+        boot_hangs: bool = False,
+        boot_delay: float = 0.0,
+    ) -> None:
         self.temperature_offset = temperature_offset
         self.boot_hangs = boot_hangs
+        self.boot_delay = boot_delay
+        self.boot_wait_calls = 0
+        self.test_mode_calls = 0
+        self.call_hook: Callable[[str], None] = lambda name: None
+        self.operating_temperatures: List[float] = []
         self.expected = 0.0
         self.standby = 0.0
         self.get_temperature_calls = 0
@@ -145,6 +155,10 @@ class _FakeMCU:
         return self.expected + self.temperature_offset
 
     async def wait_boot_complete(self) -> None:
+        self.boot_wait_calls += 1
+        self.call_hook("wait_boot_complete")
+        if self.boot_delay:
+            await asyncio.sleep(self.boot_delay)
         if not self.boot_hangs:
             return
         try:
@@ -153,7 +167,10 @@ class _FakeMCU:
             self.boot_wait_cancelled = True
             raise
 
-    async def set_test_mode(self, mode: TestMode) -> None: ...
+    async def set_test_mode(self, mode: TestMode) -> None:
+        self.test_mode_calls += 1
+        self.call_hook("set_test_mode")
+
     async def set_upper_temperature(self, temperature: float) -> None: ...
     async def set_fan_speed(self, speed: int) -> None: ...
 
@@ -166,6 +183,7 @@ class _FakeMCU:
 
     async def set_operating_temperature(self, temperature: float) -> None:
         self.expected = temperature
+        self.operating_temperatures.append(temperature)
 
 
 def _facade(mcu: _FakeMCU) -> HardwareServiceFacade:
@@ -257,3 +275,141 @@ async def test_abort_flag_unused_without_request(instant_sleep: None) -> None:
     )
     await adapter.setup_test()
     await adapter.execute_force_test(dut)
+
+
+class _AbortSwitch:
+    def __init__(self) -> None:
+        self.armed = False
+        self.lines: List[str] = []
+        self._sink_id = logger.add(self._sink, level="DEBUG")
+        self._marker: Optional[str] = None
+
+    def _sink(self, message: Any) -> None:
+        text = message.record["message"]
+        self.lines.append(text)
+        if self._marker is not None and self._marker in text:
+            self.armed = True
+
+    def arm_on_log(self, marker: str) -> None:
+        self._marker = marker
+
+    def arm_on_call(self, mcu: _FakeMCU, method: str) -> None:
+        def hook(name: str) -> None:
+            if name == method:
+                self.armed = True
+
+        mcu.call_hook = hook
+
+    def __call__(self) -> None:
+        if self.armed:
+            raise AbortError("Abort requested")
+
+    def logged(self, marker: str) -> bool:
+        return any(marker in line for line in self.lines)
+
+    def close(self) -> None:
+        logger.remove(self._sink_id)
+
+
+@pytest.fixture
+def abort_switch():
+    switch = _AbortSwitch()
+    yield switch
+    switch.close()
+
+
+def _fast_config(**overrides: Any) -> TestConfiguration:
+    values: dict = dict(
+        temperature_list=[38.0, 52.0],
+        stroke_positions=[20000.0],
+        poweron_stabilization=0,
+        mcu_boot_complete_stabilization=0,
+        mcu_command_stabilization=0,
+        robot_move_stabilization=0,
+        robot_standby_stabilization=0,
+    )
+    values.update(overrides)
+    return TestConfiguration(**values)
+
+
+async def test_boot_wait_without_timeout_completes() -> None:
+    mcu = _FakeMCU(boot_delay=0.3)
+    facade = _facade(mcu)
+    config = _fast_config(timeout_seconds=None)
+
+    for abort_check in (None, lambda: None):
+        mcu.boot_wait_calls = 0
+        await facade.setup_test(config, HardwareConfig(), abort_check=abort_check)
+        assert mcu.boot_wait_calls == 1
+
+
+async def test_boot_wait_without_timeout_aborts() -> None:
+    mcu = _FakeMCU(boot_hangs=True)
+    facade = _facade(mcu)
+    config = _fast_config(timeout_seconds=None)
+    calls = 0
+
+    def abort_check() -> None:
+        nonlocal calls
+        calls += 1
+        if calls >= 4:
+            raise AbortError("Abort requested")
+
+    with pytest.raises(AbortError):
+        await facade.setup_test(config, HardwareConfig(), abort_check=abort_check)
+
+    assert mcu.boot_wait_cancelled
+
+
+_SETUP_CHECKS = {
+    "after_power_on": ("Waiting for MCU boot complete signal", lambda mcu: mcu.boot_wait_calls),
+    "after_boot_wait": ("Starting LMA standby sequence", lambda mcu: mcu.test_mode_calls),
+    "after_test_mode": ("Starting LMA standby sequence", lambda mcu: 0),
+}
+
+
+@pytest.mark.parametrize("point", list(_SETUP_CHECKS))
+async def test_setup_test_check_between_steps(point: str, abort_switch: _AbortSwitch) -> None:
+    mcu = _FakeMCU()
+    facade = _facade(mcu)
+    if point == "after_power_on":
+        abort_switch.arm_on_log("Power enabled")
+    elif point == "after_boot_wait":
+        abort_switch.arm_on_call(mcu, "wait_boot_complete")
+    else:
+        abort_switch.arm_on_call(mcu, "set_test_mode")
+
+    with pytest.raises(AbortError):
+        await facade.setup_test(_fast_config(), HardwareConfig(), abort_check=abort_switch)
+
+    skipped_log, skipped_calls = _SETUP_CHECKS[point]
+    assert not abort_switch.logged(skipped_log)
+    assert skipped_calls(mcu) == 0
+
+
+_FORCE_CHECKS = {
+    "repetition_start": ("Cycle 1 completed", "Force Test Repetition 2/2"),
+    "temperature_start": ("Force Test Repetition 1/2", "Setting temperature to"),
+    "position_start": ("Temperature verified", "Measuring at position"),
+}
+
+
+@pytest.mark.parametrize("point", list(_FORCE_CHECKS))
+async def test_force_sequence_check_between_steps(point: str, abort_switch: _AbortSwitch) -> None:
+    mcu = _FakeMCU()
+    config = _fast_config(repeat_count=2)
+    mcu.standby = config.standby_temperature
+    facade = _facade(mcu)
+    armed_on, skipped = _FORCE_CHECKS[point]
+    abort_switch.arm_on_log(armed_on)
+    dut = DUTCommandInfo(dut_id="W1", model_number="M", serial_number="SN1")
+
+    with pytest.raises(AbortError):
+        await facade.perform_force_test_sequence(
+            config, HardwareConfig(), dut, abort_check=abort_switch
+        )
+
+    assert abort_switch.logged(armed_on)
+    assert not abort_switch.logged(skipped)
+    if point == "temperature_start":
+        assert mcu.operating_temperatures == []
