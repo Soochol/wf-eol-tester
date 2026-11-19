@@ -19,6 +19,7 @@ from ...interfaces import MCUService
 # LMA MCU Constants
 TEMP_SCALE_FACTOR = 10
 DEFAULT_TIMEOUT = 5.0
+COOLING_COMPLETE_TIMEOUT_S = 60.0
 
 
 class LMAMCU(MCUService):
@@ -409,7 +410,7 @@ class LMAMCU(MCUService):
                     raise RuntimeError("Invalid cooling temperature ACK response")
 
                 cooling_response = await self._wait_for_additional_response(
-                    timeout=40.0, expected_cmd=0x0D
+                    timeout=COOLING_COMPLETE_TIMEOUT_S, expected_cmd=0x0D
                 )
 
                 if cooling_response and len(cooling_response) >= 6 and cooling_response[2] == 0x0D:
@@ -659,7 +660,7 @@ class LMAMCU(MCUService):
                     raise RuntimeError("Invalid standby cooling ACK response")
 
                 cooling_response = await self._wait_for_additional_response(
-                    timeout=40.0, expected_cmd=0x0C
+                    timeout=COOLING_COMPLETE_TIMEOUT_S, expected_cmd=0x0C
                 )
 
                 if cooling_response and len(cooling_response) >= 6 and cooling_response[2] == 0x0C:
