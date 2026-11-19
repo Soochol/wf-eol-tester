@@ -155,6 +155,9 @@ class ProgressCard:
     def stage_mark(self, phase: Phase) -> str:
         return self._stepper.mark(phase)
 
+    def stage_has_icon(self, phase: Phase) -> bool:
+        return self._stepper.has_mark_icon(phase)
+
     def stage_status(self, phase: Phase) -> str:
         return self._stepper.status(phase)
 

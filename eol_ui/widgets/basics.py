@@ -84,6 +84,7 @@ class Badge(QLabel):
     def set_kind(self, kind: str, text: Optional[str] = None) -> None:
         if text is not None:
             self.setText(text)
+        self.setFixedHeight(tokens.BADGE_COMPACT_HEIGHT if kind == "CHANGED" else tokens.BADGE_HEIGHT)
         set_property(self, "badge", kind)
 
 

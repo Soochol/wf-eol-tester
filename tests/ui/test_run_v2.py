@@ -85,7 +85,10 @@ def test_running_screen(qtbot):
     reach_running(qtbot, window)
     assert page.progress.status_text() == "테스트 진행 중"
     assert page.progress.stage_status(Phase.SETUP) == "done"
-    assert page.progress.stage_mark(Phase.SETUP) == "✓"
+    assert page.progress.stage_mark(Phase.SETUP) not in ("V", "✓")
+    assert page.progress.stage_has_icon(Phase.SETUP)
+    assert not page.progress.stage_has_icon(Phase.FORCE_TEST)
+    assert page.progress.stage_mark(Phase.FORCE_TEST) == "2"
     assert page.progress.stage_status(Phase.FORCE_TEST) == "running"
     assert page.progress.spinner_visible()
     assert page.progress.spinner_active()

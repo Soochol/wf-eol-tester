@@ -19,7 +19,7 @@ QLabel[role="percent"] {{ font-family: {mono}; font-size: 28px; font-weight: 600
 QLabel[role="banner-title"] {{ font-size: 34px; font-weight: 700; }}
 QLabel[role="notice"] {{ color: {t.FAIL}; }}
 QLabel[chip="true"] {{ background: {t.CHIP_GRAY}; border-radius: 10px; padding: 2px 10px; }}
-QLabel[badge] {{ border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 700; }}
+QLabel[badge] {{ border-radius: {t.BADGE_HEIGHT // 2}px; padding: 0 10px; font-size: 12px; font-weight: 700; }}
 QLabel[badge="MOCK"] {{ background: {t.ACCENT}; color: white; }}
 QLabel[badge="PASS"] {{ background: {t.PASS_BADGE}; color: {t.PASS_TEXT}; }}
 QLabel[badge="FAIL"] {{ background: {t.FAIL}; color: white; }}
@@ -55,7 +55,7 @@ QPushButton[segment="true"] {{ background: transparent; border: none; border-rad
 QPushButton[segment="true"]:hover {{ color: {t.TEXT}; }}
 QPushButton[segment="true"]:checked {{ background: white; color: {t.TEXT}; }}
 QPushButton[segment="true"][compact="true"] {{ padding: 4px 12px; font-size: 12px; border-radius: 8px; }}
-QLabel[badge="CHANGED"] {{ background: {t.ACCENT}; color: white; border-radius: 8px; padding: 1px 8px; font-size: 11px; font-weight: 600; }}
+QLabel[badge="CHANGED"] {{ background: {t.ACCENT}; color: white; border-radius: {t.BADGE_COMPACT_HEIGHT // 2}px; padding: 0 8px; font-size: 11px; font-weight: 600; }}
 QLabel[role="hint"] {{ color: {t.TEXT_MUTED}; font-size: 12px; }}
 QLabel[role="field-error"] {{ color: {t.FAIL}; font-size: 12px; }}
 QLabel[role="counts"] {{ background: {t.WARN_ROW}; color: {t.WARN_TEXT}; border-radius: 10px; padding: 3px 10px; font-weight: 600; }}
