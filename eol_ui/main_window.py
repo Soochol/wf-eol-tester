@@ -4,11 +4,13 @@ from pathlib import Path
 from typing import Dict, Optional
 
 import yaml
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtCore import QRectF, Qt
+from PySide6.QtGui import QCloseEvent, QColor, QPainter, QPaintEvent
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFrame,
     QHBoxLayout,
+    QLabel,
     QMainWindow,
     QPushButton,
     QStackedWidget,
@@ -25,6 +27,7 @@ from eol_ui.progress import ProgressState
 from eol_ui.runner import RunOutcome, SequenceRunner
 from eol_ui.theme import tokens
 from eol_ui.widgets import Badge, label
+from eol_ui.widgets.icons import icon_pixmap
 
 APP_NAME = "WF EOL Tester"
 DEVICES = (
@@ -40,6 +43,55 @@ _MANIFEST = Path(eol_tester.__file__).parent / "manifest.yaml"
 def read_sequence_identity() -> str:
     manifest = yaml.safe_load(_MANIFEST.read_text(encoding="utf-8"))
     return f"{manifest['name']} {manifest['version']}"
+
+
+class _Dot(QWidget):
+    """9px status dot inside a 3px ring."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setFixedSize(15, 15)
+        self._dot = QColor(tokens.TEXT_FAINT)
+        self._ring = QColor(tokens.DIVIDER)
+
+    def set_colors(self, dot: str, ring: str) -> None:
+        self._dot, self._ring = QColor(dot), QColor(ring)
+        self.update()
+
+    def paintEvent(self, event: QPaintEvent) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(self._ring)
+        painter.drawEllipse(QRectF(0, 0, 15, 15))
+        painter.setBrush(self._dot)
+        painter.drawEllipse(QRectF(3, 3, 9, 9))
+
+
+class DeviceChip(QFrame):
+    """Device pill: ring dot + name, colored by connected True / False / None (unknown)."""
+
+    def __init__(self, text: str) -> None:
+        super().__init__()
+        self.setProperty("device-chip", True)
+        self.setFixedHeight(30)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(10, 0, 12, 0)
+        row.setSpacing(6)
+        self._dot = _Dot()
+        self._text = QLabel(text)
+        row.addWidget(self._dot)
+        row.addWidget(self._text)
+        self.set_connected(None)
+
+    def set_connected(self, known: Optional[bool]) -> None:
+        colors = tokens.DEVICE_CHIP_COLORS[known]
+        self.setProperty("connected", known)
+        self.setStyleSheet(
+            f"QFrame[device-chip=\"true\"] {{ background: {colors['bg']}; border-color: {colors['border']}; }}"
+            f"QFrame[device-chip=\"true\"] QLabel {{ color: {colors['text']}; }}"
+        )
+        self._dot.set_colors(colors["dot"], colors["ring"])
 
 
 class MainWindow(QMainWindow):
@@ -63,7 +115,7 @@ class MainWindow(QMainWindow):
 
         self.mock_badge = Badge("MOCK", "MOCK")
         self.mock_badge.setObjectName("mock-badge")
-        self._device_dots: Dict[str, QWidget] = {}
+        self._device_dots: Dict[str, DeviceChip] = {}
 
         root = QWidget()
         root.setObjectName("root")
@@ -71,7 +123,7 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._build_header())
         body = QVBoxLayout()
-        body.setContentsMargins(16, 16, 16, 16)
+        body.setContentsMargins(24, 20, 24, 20)
         body.addWidget(self._tab_stack)
         layout.addLayout(body, 1)
         self.setCentralWidget(root)
@@ -115,33 +167,48 @@ class MainWindow(QMainWindow):
         header = QFrame()
         header.setObjectName("header")
         row = QHBoxLayout(header)
-        row.setContentsMargins(16, 8, 16, 8)
+        row.setContentsMargins(24, 10, 24, 10)
+        row.setSpacing(10)
+        logo = QLabel()
+        logo.setObjectName("logo")
+        logo.setPixmap(icon_pixmap("logo", 32, tokens.ACCENT))
+        logo.setFixedSize(32, 32)
+        titles = QVBoxLayout()
+        titles.setSpacing(0)
         title = label(APP_NAME, "title")
         title.setObjectName("app-title")
         sequence = label(read_sequence_identity(), "muted")
         sequence.setObjectName("sequence-identity")
-        row.addWidget(title)
-        row.addWidget(sequence)
-        row.addSpacing(16)
+        titles.addWidget(title)
+        titles.addWidget(sequence)
+        row.addWidget(logo)
+        row.addLayout(titles)
+        row.addSpacing(24)
 
+        segmented = QFrame()
+        segmented.setProperty("segmented", True)
+        segment_row = QHBoxLayout(segmented)
+        segment_row.setContentsMargins(4, 4, 4, 4)
+        segment_row.setSpacing(4)
         group = QButtonGroup(self)
         for index, text in enumerate(("실행", "설정")):
             button = QPushButton(text)
-            button.setProperty("tab", True)
+            button.setProperty("segment", True)
             button.setCheckable(True)
             button.setChecked(index == 0)
             button.setObjectName(f"tab-{index}")
             group.addButton(button, index)
-            row.addWidget(button)
+            segment_row.addWidget(button)
         group.idClicked.connect(self._tab_stack.setCurrentIndex)
+        row.addWidget(segmented)
 
         row.addStretch(1)
         row.addWidget(self.mock_badge)
         for key, text in DEVICES:
-            dot = label(f"● {text}", "muted")
-            dot.setObjectName(f"device-{key}")
-            self._device_dots[key] = dot
-            row.addWidget(dot)
+            chip = DeviceChip(text)
+            chip.setObjectName(f"device-{key}")
+            self._device_dots[key] = chip
+            row.addWidget(chip)
         self._paint_devices({})
         return header
 
@@ -150,10 +217,7 @@ class MainWindow(QMainWindow):
 
     def _paint_devices(self, devices: Dict[str, bool]) -> None:
         for key, dot in self._device_dots.items():
-            known = devices.get(key)
-            color = tokens.UNKNOWN if known is None else (tokens.PASS if known else tokens.FAIL)
-            dot.setStyleSheet(f"color: {color};")
-            dot.setProperty("connected", known)
+            dot.set_connected(devices.get(key))
 
     def device_connected(self, key: str) -> Optional[bool]:
         return self._device_dots[key].property("connected")

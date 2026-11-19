@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide6.QtWidgets import QFrame, QLabel, QProgressBar, QWidget
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import QFrame, QGraphicsDropShadowEffect, QLabel, QProgressBar, QWidget
 
 from eol_ui.theme import tokens
 
@@ -18,9 +19,35 @@ def set_property(widget: QWidget, name: str, value: object) -> None:
     widget.style().polish(widget)
 
 
-def card() -> QFrame:
+CARD_SHADOW = (3, 1, QColor(16, 24, 40, 15))
+PRIMARY_SHADOW = (10, 4, QColor(43, 89, 195, 71))
+
+
+def elevate(
+    widget: QWidget,
+    blur: float = CARD_SHADOW[0],
+    dy: float = CARD_SHADOW[1],
+    color: QColor = CARD_SHADOW[2],
+) -> None:
+    """Attach a drop shadow. A shadow repaints the whole widget whenever any child repaints,
+    so never elevate a card that holds frequently updating content such as the log panel."""
+    effect = QGraphicsDropShadowEffect(widget)
+    effect.setBlurRadius(blur)
+    effect.setOffset(0, dy)
+    effect.setColor(color)
+    widget.setGraphicsEffect(effect)
+
+
+def flatten(widget: QWidget) -> None:
+    widget.setGraphicsEffect(None)
+
+
+def card(shadow: bool = False) -> QFrame:
+    """Card frame. Pass shadow=True only for static cards, never for the log card."""
     frame = QFrame()
     frame.setProperty("card", True)
+    if shadow:
+        elevate(frame)
     return frame
 
 
