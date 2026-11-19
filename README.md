@@ -16,6 +16,22 @@ uv sync
 uv run python -c "import eol_tester, eol_ui; print(eol_tester.EOLForceTestSequence.name)"
 ```
 
+## 앱 실행
+
+```
+uv run python -m eol_ui
+```
+
+메인 창에는 실행 화면과 판정 완료 화면이 있습니다. 설정 탭은 빈 페이지이고 다음 작업이 채웁니다.
+
+- 시리얼 번호(필수), WIP ID, 프로파일을 정하고 "시작"을 누르면 시퀀스가 돕니다. 프로파일 목록은 `eol_tester/config/test_profiles/*.yaml`입니다.
+- 실행 중에는 진행 상태, 로그, 실시간 값, 측정 결과가 갱신됩니다. "중단"을 누르면 현재 측정이 끝난 뒤 Teardown(전원 OFF, 로봇 원점 복귀)을 실행하고 "중단됨"으로 끝납니다.
+- 끝나면 판정 완료 화면(PASS, FAIL, 중단됨, 오류)으로 바뀝니다. 같은 WIP와 프로파일로 다음 DUT를 이어서 시험하거나 실행 화면으로 돌아갈 수 있습니다.
+- 실행 중에 창을 닫으면 닫기를 미루고 중단을 요청합니다. Teardown이 끝나면 창이 닫힙니다.
+- 헤더의 MOCK 배지는 `hardware_config.yaml`의 장치 5개가 모두 `mock`일 때 나옵니다. 장치 연결 점은 실행 중 `Hardware status` 로그로 갱신되고 그 전에는 회색입니다.
+
+글꼴은 번들하지 않습니다. `IBM Plex Sans KR`, `IBM Plex Mono`가 설치돼 있으면 쓰고, 없으면 시스템 대체 글꼴을 씁니다.
+
 ## 시험 실행
 
 ```
