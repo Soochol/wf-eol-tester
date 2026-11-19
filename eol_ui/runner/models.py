@@ -8,12 +8,15 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
-from .events import LogEvent, SdkEvent, StepCompleteEvent, freeze
+from .events import ErrorEvent, LogEvent, SdkEvent, StepCompleteEvent, freeze
 
 STAGE_NAMES = ("setup", "force_test", "teardown")
 
 _MEASUREMENT_NAME = re.compile(r"^force_(-?\d+(?:\.\d+)?)C_(-?\d+(?:\.\d+)?)um$")
 _RESULTS_SAVED = re.compile(r"Test results saved to: (.+?)\s*$")
+_PREFIX_ONLY = re.compile(r"^(?:[A-Za-z][\w .-]*:\s*)*$")
+
+NO_REASON_NOTICE = "이유가 전달되지 않았다"
 
 
 class Verdict(str, Enum):
@@ -73,6 +76,27 @@ def judge(abort_requested: bool, passed: bool, error: Optional[str]) -> Verdict:
     if passed:
         return Verdict.PASS
     return Verdict.FAIL
+
+
+def _is_reasonless(error: str) -> bool:
+    return _PREFIX_ONLY.match(error.strip()) is not None
+
+
+def _error_with_fallback(
+    error: str, failure: Optional[BaseException], events: Sequence[SdkEvent]
+) -> str:
+    if not _is_reasonless(error):
+        return error
+    parts = []
+    errors = [event for event in events if isinstance(event, ErrorEvent)]
+    if errors:
+        parts.append(errors[0].code)
+        parts.extend(event.message for event in errors if event.message.strip())
+    if failure is not None:
+        parts.append(type(failure).__name__)
+    shown = error.strip()
+    head = f"{shown} " if shown else ""
+    return f"{head}({' / '.join(parts)}) {NO_REASON_NOTICE}" if parts else f"{head}{NO_REASON_NOTICE}"
 
 
 def _step_completions(events: Sequence[SdkEvent]) -> Dict[str, StepCompleteEvent]:
@@ -164,6 +188,10 @@ def build_outcome(
     if not error and failure is not None:
         error = f"{type(failure).__name__}: {failure}"
 
+    verdict = judge(abort_requested, bool(result.get("passed", False)), error)
+    if verdict is Verdict.ERROR and error is not None:
+        error = _error_with_fallback(error, failure, events)
+
     stages = {
         name: StageResult(name, step.passed, step.duration, step.error)
         for name, step in completions.items()
@@ -172,7 +200,7 @@ def build_outcome(
     stages = _with_inferred_setup(stages, status_times or {})
     results_dir = _results_dir(events)
     return RunOutcome(
-        verdict=judge(abort_requested, bool(result.get("passed", False)), error),
+        verdict=verdict,
         result=freeze(result),
         error=error,
         measurements=_measurement_records(force_test),
