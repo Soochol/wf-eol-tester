@@ -1,0 +1,52 @@
+# chute 설정. 기본 브랜치에 올라간 이 파일을 읽는다.
+approval = "agent"      # "agent"면 자동 머지, "human"이면 승인 버튼을 기다린다
+budget = 3              # 연속 반송 한도. 넘으면 큐에서 빼고 submit한 터미널에 알린다
+max_batch = 8           # 한 batch의 PR 수 상한
+serialize = false       # true면 검증을 한 번에 하나만 돈다
+require_ci = false      # true면 GitHub check가 통과한 PR만 batch에 넣는다
+require_head = false    # true면 --head 없는 submit을 거절한다
+max_parallel = 2        # 동시에 도는 preflight 수 상한(슬롯 수 상한)
+preflight = "when_queued"  # "when_queued"면 합칠 PR이 큐에 있을 때만 검사하고, "always"면 늘, "never"면 안 한다
+env_check = ["uv --version"]          # 검증 전에 돌려 결과를 남길 명령. 예: ["cargo --version"]
+reuse_verified = true   # true면 같은 트리에서 이미 통과한 검증 결과를 batch가 다시 쓴다
+reuse_hours = 24        # 통과 기록을 다시 쓸 수 있는 시간(시간 단위, 1 이상 168 이하)
+reuse_other_machines = false  # true면 다른 PC의 통과 기록도 env_check 결과가 같을 때 다시 쓴다
+post_verify_interval = 0  # [[post_verify]] 검사를 시작하는 최소 간격(분). 0이면 머지로 기본 브랜치가 움직인 뒤 지금 검사가 끝나는 대로 돈다
+post_verify_hold = false  # true면 검사가 실패한 동안 실패한 단계의 paths에 해당하는 PR을 batch에 넣지 않는다
+# 에이전트가 없을 때 띄울 명령. 비어 있으면 띄우지 않고 반송을 submit한 터미널로 보낸다.
+# 값을 넣으면 그 명령으로 새 에이전트를 띄운다.
+# 주의: --dangerously-skip-permissions를 넣으면 새 에이전트가 권한 확인 없이 명령을 실행한다.
+respawn = []
+# 원격이 여러 개면 chute가 쓸 git 원격의 이름을 적는다. 예: remote = "upstream"
+# remote = "origin"
+
+[retention]
+logs_days = 7           # 검증 로그와 preflight 로그를 남기는 날수
+reports_days = 30       # 반송 보고서, preflight 보고서, 실패 트리 참조를 남기는 날수
+
+[cache]
+seed = []               # 새 슬롯에 복사해 올 git이 무시하는 경로. 예: ["target"]
+
+[flaky]
+probe_repeats = 20      # 흔들린 시험을 되풀이하는 횟수 상한
+probe_seconds = 180     # 되풀이하는 시간 상한(초)
+chronic = 3             # 이만큼 흔들리면 만성으로 본다
+chronic_days = 30       # 만성을 세는 기간(일)
+
+[[verify]]
+name = "test"
+# 검증 worktree에서 sh -c로 실행한다
+run = "uv sync --frozen && QT_QPA_PLATFORM=offscreen uv run pytest -q"
+timeout = 1200          # 초
+failed = 'FAILED (\S+)'
+probe = "QT_QPA_PLATFORM=offscreen uv run pytest -q {tests}"
+# failed = 'test (\S+) \.\.\. FAILED'   # 실패한 시험 이름을 뽑는 정규식
+# probe = "cargo test {tests} -- --exact"   # 흔들린 시험만 되풀이하는 명령. {tests} 자리가 필요하다
+# paths = ["src/", "Cargo.toml"]   # 바뀐 파일이 이 접두어로 시작할 때만 이 단계를 돈다. 비우면 안 된다
+
+# 머지 뒤에 기본 브랜치에서 돌릴 단계. [[verify]]보다 느려 batch가 기다리기 싫은 단계를 둔다.
+# 모양은 [[verify]]와 같고, 단계 이름은 [[verify]]와 겹치면 안 된다. probe가 있으면 한 번 실패한 단계는 실패한 시험만 probe로 다시 돈다.
+# [[post_verify]]
+# name = "e2e"
+# run = "npm run e2e"
+# timeout = 1800
