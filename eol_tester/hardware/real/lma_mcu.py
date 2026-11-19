@@ -19,7 +19,7 @@ from ...interfaces import MCUService
 # LMA MCU Constants
 TEMP_SCALE_FACTOR = 10
 DEFAULT_TIMEOUT = 5.0
-COOLING_COMPLETE_TIMEOUT_S = 60.0
+COOLING_COMPLETE_TIMEOUT_S = 120.0
 
 
 class LMAMCU(MCUService):
@@ -65,6 +65,7 @@ class LMAMCU(MCUService):
         self._current_standby_temp: Optional[float] = None
 
         self._packet_buffer: List[bytes] = []
+        self._response_data = b""
 
     async def connect(self) -> None:
         """Connect to MCU hardware."""
@@ -77,6 +78,8 @@ class LMAMCU(MCUService):
                 stopbits=self._stopbits,
                 timeout=self._timeout,
             )
+            self._packet_buffer.clear()
+            self._response_data = b""
             self._is_connected = True
 
         except Exception as e:
@@ -93,6 +96,8 @@ class LMAMCU(MCUService):
         finally:
             self.serial_conn = None
             self._is_connected = False
+            self._packet_buffer.clear()
+            self._response_data = b""
 
     async def is_connected(self) -> bool:
         """Check connection status."""
@@ -111,6 +116,7 @@ class LMAMCU(MCUService):
 
         actual_timeout = timeout if timeout is not None else self._timeout
         self._packet_buffer.clear()
+        self._response_data = b""
 
         packet_bytes = bytes.fromhex(packet_hex.replace(" ", ""))
         start_time = time.time()
@@ -176,29 +182,24 @@ class LMAMCU(MCUService):
         """Wait for additional response."""
         self._ensure_connected()
 
-        if self._packet_buffer:
-            packet = self._packet_buffer.pop(0)
-            if expected_cmd is None or (len(packet) >= 3 and packet[2] == expected_cmd):
-                return packet
-
         start_time = time.time()
-        response_data = b""
 
         while time.time() - start_time < timeout:
+            while self._response_data:
+                valid_packet = self._extract_valid_packet(self._response_data)
+                if not valid_packet:
+                    break
+                end = self._response_data.find(valid_packet) + len(valid_packet)
+                self._response_data = self._response_data[end:]
+                self._packet_buffer.append(valid_packet)
+
+            for index, packet in enumerate(self._packet_buffer):
+                if expected_cmd is None or (len(packet) >= 3 and packet[2] == expected_cmd):
+                    return self._packet_buffer.pop(index)
+
             if self.serial_conn and self.serial_conn.in_waiting > 0:
-                new_data = self.serial_conn.read(self.serial_conn.in_waiting)
-                response_data += new_data
-
-                while response_data:
-                    valid_packet = self._extract_valid_packet(response_data)
-                    if not valid_packet:
-                        break
-
-                    packet_len = len(valid_packet)
-                    response_data = response_data[packet_len:]
-
-                    if expected_cmd is None or valid_packet[2] == expected_cmd:
-                        return valid_packet
+                self._response_data += self.serial_conn.read(self.serial_conn.in_waiting)
+                continue
 
             await asyncio.sleep(0.01)
 
