@@ -199,6 +199,7 @@ class RunPage(QWidget):
     def _on_finished(self, outcome: RunOutcome) -> None:
         self._timer.stop()
         self._show_state(self._runner.progress_state())
+        self._measurements.close_pending()
         self._sync_buttons()
 
     @property

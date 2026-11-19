@@ -106,6 +106,40 @@ def test_abort_shows_aborted_and_teardown(qtbot, window):
     assert window.result_page.file_names() == []
 
 
+def test_abort_leaves_no_pending_rows(qtbot, window):
+    outcomes = collect_outcomes(window)
+    during_run: List[List[str]] = []
+
+    def sample(_: Any) -> None:
+        if window.runner.is_running:
+            during_run.append(window.run_page.measurements.badge_texts())
+
+    window.runner.progress.connect(sample)
+    on_first_measuring(window, child(window, QPushButton, "abort-button").click)
+
+    begin_run(window)
+    wait_for_outcomes(qtbot, outcomes)
+
+    assert outcomes[0].verdict is Verdict.ABORTED
+    assert any(texts == ["판정 대기"] for texts in during_run)
+    assert window.run_page.measurements.row_count() >= 1
+    assert set(window.run_page.measurements.badge_texts()) == {"미완료"}
+
+
+def test_fail_verdict_screen(qtbot, window):
+    outcomes = collect_outcomes(window)
+    window.run_page.set_pending_parameters({"force_limit_min": 0.0, "force_limit_max": 1.0})
+
+    begin_run(window)
+    wait_for_outcomes(qtbot, outcomes)
+
+    assert outcomes[0].verdict is Verdict.FAIL
+    assert window.result_page.banner_kind == "FAIL"
+    assert window.result_page.banner_title == "FAIL"
+    assert "0/2" in window.result_page.banner_summary
+    assert window.run_page.measurements.badge_texts() == ["FAIL", "FAIL"]
+
+
 def test_log_filter_and_counts(qtbot):
     panel = LogPanel()
     qtbot.addWidget(panel)

@@ -11,6 +11,9 @@ from eol_ui.widgets.basics import verdict_kind
 
 _MEASUREMENT_NAME = re.compile(r"^force_(-?\d+(?:\.\d+)?)C_(-?\d+(?:\.\d+)?)um$")
 
+PENDING_TEXT = "판정 대기"
+INCOMPLETE_TEXT = "미완료"
+
 Key = Tuple[Optional[float], Optional[float]]
 
 
@@ -22,6 +25,7 @@ class MeasureRow:
     min_value: Optional[float] = None
     max_value: Optional[float] = None
     passed: Optional[bool] = None
+    incomplete: bool = False
 
     @property
     def key(self) -> Key:
@@ -40,7 +44,7 @@ class _RowView(QWidget):
         super().__init__()
         self._title = label("", "mono")
         self._force = label("", "mono")
-        self._badge = Badge("측정 중")
+        self._badge = Badge(PENDING_TEXT)
         self._bar = RangeBar()
         top = QHBoxLayout()
         top.addWidget(self._title, 1)
@@ -55,17 +59,17 @@ class _RowView(QWidget):
         self._title.setText(f"{format_number(row.temperature, '°C')} · {format_number(row.position, 'µm', 0)}")
         self._force.setText(f"{format_number(row.force, ' kgf', 3)}")
         self._bar.show_value(row.force, row.min_value, row.max_value)
-        self._badge.set_kind(verdict_kind(row.passed), _badge_text(row.passed))
+        self._badge.set_kind(verdict_kind(row.passed), _badge_text(row))
 
     @property
     def badge_text(self) -> str:
         return self._badge.text()
 
 
-def _badge_text(passed: Optional[bool]) -> str:
-    if passed is None:
-        return "측정 중"
-    return "PASS" if passed else "FAIL"
+def _badge_text(row: MeasureRow) -> str:
+    if row.passed is None:
+        return INCOMPLETE_TEXT if row.incomplete else PENDING_TEXT
+    return "PASS" if row.passed else "FAIL"
 
 
 class MeasurementList(QWidget):
@@ -121,6 +125,13 @@ class MeasurementList(QWidget):
             updated = replace(self._rows[index], min_value=min_value, max_value=max_value, passed=verdict)
             self._rows[index] = updated
             self._views[index].show_row(updated)
+
+    def close_pending(self) -> None:
+        for index, row in enumerate(self._rows):
+            if row.passed is None and not row.incomplete:
+                closed = replace(row, incomplete=True)
+                self._rows[index] = closed
+                self._views[index].show_row(closed)
 
     def _append(self, row: MeasureRow) -> None:
         view = _RowView()
