@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+import time
+from typing import Any, Dict, List, Mapping, Optional
 
 from PySide6.QtCore import QObject, Signal
 
@@ -26,10 +27,15 @@ class QtOutputStrategy(QObject):
         super().__init__(parent)
         self._recorded: List[SdkEvent] = []
         self._input_defaults: Dict[str, Any] = {}
+        self._status_times: Dict[str, float] = {}
 
     @property
     def recorded(self) -> tuple[SdkEvent, ...]:
         return tuple(self._recorded)
+
+    @property
+    def status_times(self) -> Mapping[str, float]:
+        return dict(self._status_times)
 
     def _publish(self, event: SdkEvent) -> None:
         self._recorded.append(event)
@@ -109,6 +115,7 @@ class QtOutputStrategy(QObject):
         current_step: Optional[str] = None,
         message: str = "",
     ) -> None:
+        self._status_times.setdefault(status, time.monotonic())
         self._publish(StatusEvent(status, progress, current_step, message))
 
     def input_request(

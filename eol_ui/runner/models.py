@@ -123,6 +123,21 @@ def _files_modified_since(directory: Optional[Path], started_at: datetime) -> Tu
     return tuple(sorted(files))
 
 
+def _with_inferred_setup(
+    stages: Dict[str, StageResult], status_times: Mapping[str, float]
+) -> Dict[str, StageResult]:
+    # The SDK emits the setup step only when run() starts its first step, so a run
+    # aborted right after setup has no setup step event. The "running" status proves
+    # setup finished.
+    if "setup" in stages or "running" not in status_times:
+        return stages
+    started = status_times.get("setup", status_times["running"])
+    return {
+        "setup": StageResult("setup", True, status_times["running"] - started, None),
+        **stages,
+    }
+
+
 def build_outcome(
     request: RunRequest,
     result: Optional[Mapping[str, Any]],
@@ -131,6 +146,7 @@ def build_outcome(
     abort_requested: bool,
     started_at: datetime,
     finished_at: datetime,
+    status_times: Optional[Mapping[str, float]] = None,
 ) -> RunOutcome:
     completions = _step_completions(events)
     force_test = completions.get("force_test")
@@ -146,6 +162,7 @@ def build_outcome(
         for name, step in completions.items()
         if name in STAGE_NAMES
     }
+    stages = _with_inferred_setup(stages, status_times or {})
     results_dir = _results_dir(events)
     return RunOutcome(
         verdict=judge(abort_requested, bool(result.get("passed", False)), error),

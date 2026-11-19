@@ -131,14 +131,28 @@ class SequenceRunner(QObject):
         except BaseException as exc:
             failure = exc
         finally:
-            logger.remove(sink_id)
+            self._remove_sink(sink_id)
             loop.close()
         with self._lock:
             abort_requested = self._abort_requested
         outcome = build_outcome(
-            request, result, failure, strategy.recorded, abort_requested, started_at, datetime.now()
+            request,
+            result,
+            failure,
+            strategy.recorded,
+            abort_requested,
+            started_at,
+            datetime.now(),
+            strategy.status_times,
         )
         self._inbox.emit(outcome)
+
+    @staticmethod
+    def _remove_sink(sink_id: int) -> None:
+        try:
+            logger.remove(sink_id)
+        except ValueError:
+            pass
 
     async def _execute(
         self, loop: asyncio.AbstractEventLoop, request: RunRequest, strategy: QtOutputStrategy

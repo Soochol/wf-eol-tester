@@ -3,10 +3,11 @@ from __future__ import annotations
 from typing import Any, List
 
 import pytest
+from loguru import logger
 from PySide6.QtCore import QCoreApplication, QThread
 
 import eol_tester.hardware_adapter as hardware_adapter
-from eol_ui.progress import ProgressState
+from eol_ui.progress import Phase, ProgressState, StageStatus
 from eol_ui.runner import (
     LogRecord,
     RunnerBusyError,
@@ -151,4 +152,67 @@ def test_runner_rejects_second_start(qtbot):
             runner.start(REQUEST)
 
     assert blocker.args[0].verdict is Verdict.PASS
+    assert not runner.is_running
+
+
+def test_runner_abort_at_end_of_setup(qtbot):
+    runner = SequenceRunner()
+    bypassed: List[str] = []
+
+    def watch(record: LogRecord) -> None:
+        if "Temperature verification bypassed" in record.message:
+            bypassed.append(record.message)
+            if len(bypassed) == 2:
+                runner.request_abort()
+
+    runner.log.connect(watch)
+
+    outcome = run_to_end(qtbot, runner)
+
+    assert outcome.verdict is Verdict.ABORTED
+    assert outcome.stages["setup"].passed
+    assert outcome.stages["teardown"].passed
+    final = runner.progress_state()
+    assert final.phase is Phase.DONE
+    assert StageStatus.RUNNING not in {stage.status for stage in final.stages.values()}
+
+
+def test_runner_teardown_failure_does_not_report_power_off(qtbot, monkeypatch):
+    real_factory = hardware_adapter.create_standalone_hardware_adapter
+
+    def factory(**kwargs: Any):
+        adapter = real_factory(**kwargs)
+
+        async def teardown_test() -> None:
+            raise RuntimeError("power stuck")
+
+        adapter.teardown_test = teardown_test
+        return adapter
+
+    monkeypatch.setattr(hardware_adapter, "create_standalone_hardware_adapter", factory)
+    runner = SequenceRunner()
+
+    outcome = run_to_end(qtbot, runner)
+
+    assert outcome.verdict is Verdict.ERROR
+    final = runner.progress_state()
+    assert final.stages[Phase.TEARDOWN].status is StageStatus.FAILED
+    assert final.power_on is not False
+
+
+def test_runner_finishes_when_loguru_handlers_are_removed_mid_run(qtbot):
+    runner = SequenceRunner()
+    removed: List[bool] = []
+
+    def remove_handlers(record: LogRecord) -> None:
+        if "Measuring at position" in record.message and not removed:
+            removed.append(True)
+            logger.remove()
+
+    runner.log.connect(remove_handlers)
+
+    outcome = run_to_end(qtbot, runner)
+
+    assert removed
+    assert outcome.verdict is Verdict.PASS
     assert not runner.is_running

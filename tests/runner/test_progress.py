@@ -158,3 +158,36 @@ def test_progress_parser_setup_failure():
     assert final.stages[Phase.FORCE_TEST].status is StageStatus.PENDING
     assert final.stages[Phase.TEARDOWN].status is StageStatus.DONE
     assert final.percent == 100.0
+
+
+def test_progress_parser_closes_running_stages_when_sequence_completes():
+    tracker = ProgressTracker(FakeClock())
+
+    tracker.on_status("setup")
+    tracker.on_status("running")
+    tracker.on_status("teardown")
+    tracker.on_step_complete("teardown", True, 0.2)
+    tracker.on_sequence_complete()
+    final = tracker.snapshot()
+
+    assert final.stages[Phase.FORCE_TEST].status is StageStatus.FAILED
+    assert StageStatus.RUNNING not in {stage.status for stage in final.stages.values()}
+
+
+def test_progress_parser_failed_teardown_does_not_claim_power_off():
+    tracker = ProgressTracker(FakeClock())
+    tracker.on_log("Power enabled: 40.0V, 42.0A")
+
+    tracker.on_step_complete("teardown", False, 0.2)
+
+    assert tracker.snapshot().power_on is None
+
+
+def test_progress_parser_failed_teardown_keeps_confirmed_power_off():
+    tracker = ProgressTracker(FakeClock())
+    tracker.on_log("Power enabled: 40.0V, 42.0A")
+    tracker.on_log("Test teardown complete")
+
+    tracker.on_step_complete("teardown", False, 0.2)
+
+    assert tracker.snapshot().power_on is False

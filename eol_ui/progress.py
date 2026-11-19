@@ -78,7 +78,7 @@ _TEMPERATURE_VERIFIED = re.compile(rf"Temperature verified: {_NUMBER}C")
 _ROBOT_INITIAL = re.compile(rf"Moving robot to initial position: {_NUMBER}um")
 _ROBOT_MOVED = re.compile(rf"Moved to {_NUMBER}um")
 _HARDWARE_STATUS = re.compile(r"Hardware status: (\{.*\})\s*$")
-_TEARDOWN_COMPLETE = re.compile(r"Test teardown complete")
+_TEARDOWN_COMPLETE = re.compile(r"^Test teardown completed?$")
 
 
 def _stage_for(name: str) -> Optional[Phase]:
@@ -119,14 +119,25 @@ class ProgressTracker:
             return False
         outcome = StageProgress(StageStatus.DONE if passed else StageStatus.FAILED, duration)
         stages = self._with_stage(stage, outcome)
-        if stage is Phase.TEARDOWN:
+        if stage is not Phase.TEARDOWN:
+            return self._apply(stages=stages)
+        if passed:
             return self._apply(stages=stages, power_on=False)
-        return self._apply(stages=stages)
+        power_on = None if self._state.power_on else self._state.power_on
+        return self._apply(stages=stages, power_on=power_on)
 
     def on_sequence_complete(self) -> bool:
         if self._finished_at is None:
             self._finished_at = self._clock()
-        return self._apply(phase=Phase.DONE, activity="완료")
+        stages = {
+            stage: StageProgress(StageStatus.FAILED)
+            if progress.status is StageStatus.RUNNING
+            else progress
+            for stage, progress in self._state.stages.items()
+        }
+        return self._apply(
+            phase=Phase.DONE, stages=MappingProxyType(stages), activity="완료"
+        )
 
     def on_log(self, message: str) -> bool:
         for pattern, handler in self._log_handlers():
