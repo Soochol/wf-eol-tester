@@ -5,7 +5,7 @@ Simplified coordinator that orchestrates hardware services.
 
 import asyncio
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from loguru import logger
 
@@ -26,6 +26,14 @@ from ..interfaces import (
     RobotService,
     TestMode,
 )
+
+AbortCheck = Callable[[], None]
+_ABORT_POLL_INTERVAL = 0.2
+
+
+def _check(abort_check: Optional[AbortCheck]) -> None:
+    if abort_check is not None:
+        abort_check()
 
 
 class HardwareServiceFacade:
@@ -206,6 +214,7 @@ class HardwareServiceFacade:
         self,
         test_config: TestConfiguration,
         hardware_config: HardwareConfig,
+        abort_check: Optional[AbortCheck] = None,
     ) -> None:
         """Setup hardware for test execution."""
         logger.info("Setting up test...")
@@ -214,39 +223,67 @@ class HardwareServiceFacade:
         await self._power.enable_output()
         logger.info(f"Power enabled: {test_config.voltage}V, {test_config.current}A")
         await asyncio.sleep(test_config.poweron_stabilization)
+        _check(abort_check)
 
         # Wait for MCU boot complete
         logger.info("Waiting for MCU boot complete signal...")
-        await asyncio.wait_for(
-            self._mcu.wait_boot_complete(),
-            timeout=test_config.timeout_seconds,
-        )
+        await self._wait_boot_complete(test_config.timeout_seconds, abort_check)
         await asyncio.sleep(test_config.mcu_boot_complete_stabilization)
+        _check(abort_check)
 
         # Set test mode
         await self._mcu.set_test_mode(TestMode.MODE_1)
         await asyncio.sleep(test_config.mcu_command_stabilization)
+        _check(abort_check)
 
         # Set LMA standby
-        await self.set_lma_standby(test_config, hardware_config)
+        await self.set_lma_standby(test_config, hardware_config, abort_check)
 
         logger.info("Test setup completed")
+
+    async def _wait_boot_complete(
+        self,
+        timeout_seconds: float,
+        abort_check: Optional[AbortCheck],
+    ) -> None:
+        """Wait for MCU boot, polling abort_check; raises asyncio.TimeoutError on timeout."""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout_seconds
+        task = asyncio.ensure_future(self._mcu.wait_boot_complete())
+        try:
+            while True:
+                _check(abort_check)
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    raise asyncio.TimeoutError()
+                done, _ = await asyncio.wait({task}, timeout=min(_ABORT_POLL_INTERVAL, remaining))
+                if done:
+                    task.result()
+                    return
+        finally:
+            if not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
 
     async def set_lma_standby(
         self,
         test_config: TestConfiguration,
         hardware_config: HardwareConfig,
+        abort_check: Optional[AbortCheck] = None,
     ) -> None:
         """Set LMA standby sequence."""
         logger.info("Starting LMA standby sequence...")
 
         # MCU configuration
+        _check(abort_check)
         await self._mcu.set_upper_temperature(test_config.upper_temperature)
         await asyncio.sleep(test_config.mcu_command_stabilization)
 
+        _check(abort_check)
         await self._mcu.set_fan_speed(test_config.fan_speed)
         await asyncio.sleep(test_config.mcu_command_stabilization)
 
+        _check(abort_check)
         await self._mcu.start_standby_heating(
             operating_temp=test_config.activation_temperature,
             standby_temp=test_config.standby_temperature,
@@ -254,9 +291,12 @@ class HardwareServiceFacade:
         await asyncio.sleep(test_config.mcu_command_stabilization)
 
         # Verify temperature
-        await self.verify_mcu_temperature(test_config.activation_temperature, test_config)
+        await self.verify_mcu_temperature(
+            test_config.activation_temperature, test_config, abort_check
+        )
 
         # Robot movements
+        _check(abort_check)
         self._robot_state = RobotState.MOVING
         await self._robot.move_absolute(
             position=test_config.operating_position,
@@ -271,6 +311,7 @@ class HardwareServiceFacade:
         await asyncio.sleep(test_config.robot_standby_stabilization)
 
         # Return to initial position
+        _check(abort_check)
         self._robot_state = RobotState.MOVING
         await self._robot.move_absolute(
             position=test_config.initial_position,
@@ -283,11 +324,14 @@ class HardwareServiceFacade:
         self._robot_state = RobotState.INITIAL_POSITION
 
         # Start standby cooling
+        _check(abort_check)
         await self._mcu.start_standby_cooling()
         await asyncio.sleep(test_config.mcu_command_stabilization)
 
         # Verify standby temperature
-        await self.verify_mcu_temperature(test_config.standby_temperature, test_config)
+        await self.verify_mcu_temperature(
+            test_config.standby_temperature, test_config, abort_check
+        )
 
         logger.info("LMA standby sequence completed")
 
@@ -296,6 +340,7 @@ class HardwareServiceFacade:
         test_config: TestConfiguration,
         hardware_config: HardwareConfig,
         dut_info: DUTCommandInfo,
+        abort_check: Optional[AbortCheck] = None,
     ) -> Tuple[TestMeasurements, List[CycleResult]]:
         """Perform complete force test measurement sequence."""
         logger.info("Starting force test sequence...")
@@ -305,6 +350,7 @@ class HardwareServiceFacade:
         individual_cycle_results = []
 
         for repeat_idx in range(repeat_count):
+            _check(abort_check)
             cycle_measurements_dict: Dict[float, Dict[float, Dict[str, Any]]] = {}
             cycle_start_time = datetime.now()
 
@@ -312,6 +358,7 @@ class HardwareServiceFacade:
                 logger.info(f"===== Force Test Repetition {repeat_idx + 1}/{repeat_count} =====")
 
             for temp_idx, temperature in enumerate(test_config.temperature_list):
+                _check(abort_check)
                 logger.info(f"Setting temperature to {temperature}C ({temp_idx + 1}/{len(test_config.temperature_list)})")
 
                 # Set MCU temperature
@@ -319,7 +366,7 @@ class HardwareServiceFacade:
                 await asyncio.sleep(test_config.mcu_command_stabilization)
 
                 # Verify temperature
-                await self.verify_mcu_temperature(temperature, test_config)
+                await self.verify_mcu_temperature(temperature, test_config, abort_check)
 
                 # Initialize measurements for this temperature
                 if repeat_idx == 0:
@@ -328,6 +375,7 @@ class HardwareServiceFacade:
 
                 # Measure at each position
                 for pos_idx, position in enumerate(test_config.stroke_positions):
+                    _check(abort_check)
                     logger.info(f"Measuring at position {position}um ({pos_idx + 1}/{len(test_config.stroke_positions)})")
 
                     # Move robot
@@ -374,7 +422,9 @@ class HardwareServiceFacade:
                 await asyncio.sleep(test_config.mcu_command_stabilization)
 
                 # Verify standby temperature
-                await self.verify_mcu_temperature(test_config.standby_temperature, test_config)
+                await self.verify_mcu_temperature(
+                    test_config.standby_temperature, test_config, abort_check
+                )
 
             # Create cycle result
             cycle_end_time = datetime.now()
@@ -442,9 +492,12 @@ class HardwareServiceFacade:
         self,
         expected_temp: float,
         test_config: TestConfiguration,
+        abort_check: Optional[AbortCheck] = None,
     ) -> None:
         """Verify MCU temperature is within tolerance."""
         from ..domain.exceptions import HardwareOperationError
+
+        _check(abort_check)
 
         logger.info(
             f"Verifying MCU temperature - Expected: {expected_temp}C "
@@ -463,6 +516,7 @@ class HardwareServiceFacade:
         retry_delay = 1.0
 
         for attempt in range(max_retries + 1):
+            _check(abort_check)
             actual_temp = await self._mcu.get_temperature()
             temp_diff = abs(actual_temp - expected_temp)
 

@@ -149,7 +149,7 @@ class EOLForceTestSequence(SequenceBase):
 
             # Setup test (power on, MCU boot, LMA standby)
             self.emit_log("info", "Setting up test environment...")
-            await self.hardware.setup_test()
+            await self.hardware.setup_test(abort_check=self.check_abort)
             self.emit_log("info", "Test environment setup complete")
 
             # Create DUT info from context
@@ -212,6 +212,7 @@ class EOLForceTestSequence(SequenceBase):
             try:
                 measurements, cycle_results = await self.hardware.execute_force_test(
                     self._dut_info,
+                    abort_check=self.check_abort,
                 )
 
                 self._measurements = measurements.to_dict() if hasattr(measurements, 'to_dict') else {}
