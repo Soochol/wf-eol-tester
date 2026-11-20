@@ -175,7 +175,7 @@ class _FakeMCU:
     async def set_upper_temperature(self, temperature: float) -> None: ...
     async def set_fan_speed(self, speed: int) -> None: ...
 
-    async def start_standby_heating(self, operating_temp: float, standby_temp: float) -> None:
+    async def start_standby_heating(self, operating_temp: float, standby_temp: float, hold_time_ms: int = 60000) -> None:
         self.expected = operating_temp
         self.standby = standby_temp
 
