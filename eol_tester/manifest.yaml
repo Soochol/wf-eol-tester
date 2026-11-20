@@ -123,8 +123,26 @@ parameters:
     type: integer
     default: 1
     min: 1
-    max: 100
+    max: 1000
     description: "Number of times to repeat the test sequence"
+
+  heating_phase_seconds:
+    display_name: "Heating Phase"
+    type: float
+    unit: "s"
+    default: 0.0
+    min: 0.0
+    max: 600.0
+    description: "Fixed heating phase per temperature: heating time plus waiting until this many seconds have passed (0 = no fixed phase)"
+
+  cooling_phase_seconds:
+    display_name: "Cooling Phase"
+    type: float
+    unit: "s"
+    default: 0.0
+    min: 0.0
+    max: 600.0
+    description: "Fixed cooling phase per temperature: cooling time plus waiting until this many seconds have passed (0 = no fixed phase)"
 
   timeout_seconds:
     display_name: "Test Timeout"

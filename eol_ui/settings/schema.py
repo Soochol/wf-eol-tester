@@ -33,6 +33,8 @@ PROFILE_LOCATION: dict[str, Optional[Tuple[str, str]]] = {
     "stroke_positions": ("test_parameters", "stroke_positions"),
     "repeat_count": ("execution", "repeat_count"),
     "timeout_seconds": ("execution", "timeout_seconds"),
+    "heating_phase_seconds": ("timing", "heating_phase_seconds"),
+    "cooling_phase_seconds": ("timing", "cooling_phase_seconds"),
     "force_limit_min": ("pass_criteria", "force_limit_min"),
     "force_limit_max": ("pass_criteria", "force_limit_max"),
     "stop_on_failure": ("execution", "stop_on_failure"),
