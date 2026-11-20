@@ -74,6 +74,8 @@ class EOLForceTestSequence(SequenceBase):
         self._cycle_results: List[Any] = []
         self._result_repository: Optional[ResultRepository] = None
         self._test_start_time: Optional[datetime] = None
+        self._test_id: Optional[str] = None
+        self._saved_cycles: set = set()
 
         # Get parameters using SDK utility method
         self.stop_on_failure = self.get_parameter("stop_on_failure", True)
@@ -210,9 +212,11 @@ class EOLForceTestSequence(SequenceBase):
             )
 
             try:
+                self._test_id = self._new_test_id()
                 measurements, cycle_results = await self.hardware.execute_force_test(
                     self._dut_info,
                     abort_check=self.check_abort,
+                    on_cycle_complete=self._save_cycle_now if repeat_count > 1 else None,
                 )
 
                 self._measurements = measurements.to_dict() if hasattr(measurements, 'to_dict') else {}
@@ -443,6 +447,9 @@ class EOLForceTestSequence(SequenceBase):
             poweron_stabilization=timing.get("poweron_stabilization", 0.5),
             power_command_stabilization=timing.get("power_command_stabilization", 0.2),
             loadcell_zero_delay=timing.get("loadcell_zero_delay", 0.1),
+            heating_phase_seconds=float(timing.get("heating_phase_seconds") or 0.0),
+            cooling_phase_seconds=float(timing.get("cooling_phase_seconds") or 0.0),
+            mcu_hold_time_ms=int(timing.get("mcu_hold_time_ms") or 60000),
             # Execution settings
             temperature_tolerance=tolerances.get("temperature_tolerance", 3.0),
             retry_attempts=execution.get("retry_attempts", 3),
@@ -510,6 +517,11 @@ class EOLForceTestSequence(SequenceBase):
         repeat_count = self.get_parameter("repeat_count")
         if repeat_count is not None:
             overrides["repeat_count"] = repeat_count
+
+        for name in ("heating_phase_seconds", "cooling_phase_seconds"):
+            value = self.get_parameter(name)
+            if value is not None:
+                overrides[name] = float(value)
 
         timeout_seconds = self.get_parameter("timeout_seconds")
         if timeout_seconds is not None:
@@ -616,7 +628,7 @@ class EOLForceTestSequence(SequenceBase):
         try:
             # Generate test ID
             ts = datetime.now()
-            test_id = f"{self._dut_info.serial_number}_{ts.strftime('%Y%m%d_%H%M%S')}"
+            test_id = self._test_id or self._new_test_id(ts)
 
             # Get WIP ID from context (passed from popup input)
             wip_id = self.context.wip_id
@@ -692,41 +704,63 @@ class EOLForceTestSequence(SequenceBase):
             return
 
         for cycle_result in self._cycle_results:
-            try:
-                # Extract cycle data
-                cycle_num = cycle_result.cycle_number
-                is_passed = cycle_result.is_passed
-                measurements = cycle_result.measurements.get("measurements", {})
+            if cycle_result.cycle_number in self._saved_cycles:
+                continue
+            self._save_one_cycle(test_id, total_cycles, wip_id, cycle_result)
 
-                # Get timing data if available
-                heating_time = 0.0
-                cooling_time = 0.0
-                if hasattr(cycle_result, 'execution_duration'):
-                    # Use cycle duration as approximation
-                    cycle_seconds = cycle_result.execution_duration.seconds
-                    # Rough estimate: 60% heating, 40% cooling
-                    heating_time = cycle_seconds * 0.6
-                    cooling_time = cycle_seconds * 0.4
+    def _new_test_id(self, ts: Optional[datetime] = None) -> str:
+        serial = self._dut_info.serial_number if self._dut_info else "UNKNOWN"
+        return f"{serial}_{(ts or datetime.now()).strftime('%Y%m%d_%H%M%S')}"
 
-                # Get timestamp
-                timestamp = cycle_result.completed_at if hasattr(cycle_result, 'completed_at') else datetime.now()
+    async def _save_cycle_now(self, cycle_result: Any) -> None:
+        """Save one finished cycle immediately so long runs keep data if they end in an error."""
+        if not self._result_repository or not self._dut_info or not self._test_id:
+            return
+        self._save_one_cycle(
+            self._test_id,
+            self.hardware.test_config.repeat_count,
+            self.context.wip_id,
+            cycle_result,
+        )
 
-                # Save to cycle CSV
-                self._result_repository.save_cycle_measurements(
-                    test_id=f"{test_id}_cycle{cycle_num}",
-                    serial_number=self._dut_info.serial_number,
-                    cycle_num=cycle_num,
-                    total_cycles=total_cycles,
-                    measurements=measurements,
-                    passed=is_passed,
-                    heating_time=heating_time,
-                    cooling_time=cooling_time,
-                    timestamp=timestamp,
-                    wip_id=wip_id,
-                )
+    def _save_one_cycle(
+        self, test_id: str, total_cycles: int, wip_id: Optional[str], cycle_result: Any
+    ) -> None:
+        cycle_num = getattr(cycle_result, "cycle_number", None)
+        try:
+            is_passed = cycle_result.is_passed
+            measurements = cycle_result.measurements.get("measurements", {})
 
-            except Exception as e:
-                logger.warning(f"Failed to save cycle {cycle_num} measurements: {e}")
+            # Get timing data if available
+            heating_time = 0.0
+            cooling_time = 0.0
+            if hasattr(cycle_result, 'execution_duration'):
+                # Use cycle duration as approximation
+                cycle_seconds = cycle_result.execution_duration.seconds
+                # Rough estimate: 60% heating, 40% cooling
+                heating_time = cycle_seconds * 0.6
+                cooling_time = cycle_seconds * 0.4
+
+            # Get timestamp
+            timestamp = cycle_result.completed_at if hasattr(cycle_result, 'completed_at') else datetime.now()
+
+            # Save to cycle CSV
+            self._result_repository.save_cycle_measurements(
+                test_id=f"{test_id}_cycle{cycle_num}",
+                serial_number=self._dut_info.serial_number,
+                cycle_num=cycle_num,
+                total_cycles=total_cycles,
+                measurements=measurements,
+                passed=is_passed,
+                heating_time=heating_time,
+                cooling_time=cooling_time,
+                timestamp=timestamp,
+                wip_id=wip_id,
+            )
+            self._saved_cycles.add(cycle_num)
+
+        except Exception as e:
+            logger.warning(f"Failed to save cycle {cycle_num} measurements: {e}")
 
 
 # CLI entry point

@@ -38,6 +38,8 @@ GROUPS: Tuple[Tuple[str, Tuple[Tuple[str, str], ...]], ...] = (
         "실행",
         (
             ("repeat_count", "반복 횟수"),
+            ("heating_phase_seconds", "가열 구간"),
+            ("cooling_phase_seconds", "냉각 구간"),
             ("timeout_seconds", "타임아웃"),
             ("stop_on_failure", "실패 시 즉시 중단"),
         ),
