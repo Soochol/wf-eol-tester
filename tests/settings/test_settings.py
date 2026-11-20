@@ -41,12 +41,12 @@ def _yaml(path: Path) -> dict[str, Any]:
 
 def test_schema_from_manifest(model: SettingsModel) -> None:
     schema = model.schema
-    assert len(schema) == 15
+    assert len(schema) == 17
     assert (schema["voltage"].unit, schema["voltage"].min, schema["voltage"].max) == ("V", 0.0, 50.0)
     assert (schema["repeat_count"].kind, schema["repeat_count"].min, schema["repeat_count"].max) == (
         "int",
         1,
-        100,
+        1000,
     )
     assert schema["temperature_list"].kind == "float_list"
     assert schema["stroke_positions"].kind == "float_list"

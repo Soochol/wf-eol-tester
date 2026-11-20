@@ -5,7 +5,7 @@ Simplified coordinator that orchestrates hardware services.
 
 import asyncio
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 from loguru import logger
 
@@ -29,6 +29,32 @@ from ..interfaces import (
 
 AbortCheck = Callable[[], None]
 _ABORT_POLL_INTERVAL = 0.2
+
+
+CycleCallback = Callable[[CycleResult], Awaitable[None]]
+
+
+async def _fill_phase(
+    started: float,
+    phase_seconds: float,
+    label: str,
+    abort_check: Optional[AbortCheck],
+) -> None:
+    if phase_seconds <= 0:
+        return
+    loop = asyncio.get_running_loop()
+    elapsed = loop.time() - started
+    if elapsed > phase_seconds:
+        logger.warning(f"{label} phase took {elapsed:.1f}s, longer than {phase_seconds:.1f}s")
+        return
+    logger.info(f"{label} done in {elapsed:.1f}s, waiting {phase_seconds - elapsed:.1f}s to fill {phase_seconds:.1f}s phase")
+    deadline = started + phase_seconds
+    while True:
+        _check(abort_check)
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            return
+        await asyncio.sleep(min(_ABORT_POLL_INTERVAL, remaining))
 
 
 def _check(abort_check: Optional[AbortCheck]) -> None:
@@ -291,6 +317,7 @@ class HardwareServiceFacade:
         await self._mcu.start_standby_heating(
             operating_temp=test_config.activation_temperature,
             standby_temp=test_config.standby_temperature,
+            hold_time_ms=test_config.mcu_hold_time_ms,
         )
         await asyncio.sleep(test_config.mcu_command_stabilization)
 
@@ -345,6 +372,7 @@ class HardwareServiceFacade:
         hardware_config: HardwareConfig,
         dut_info: DUTCommandInfo,
         abort_check: Optional[AbortCheck] = None,
+        on_cycle_complete: Optional[CycleCallback] = None,
     ) -> Tuple[TestMeasurements, List[CycleResult]]:
         """Perform complete force test measurement sequence."""
         logger.info("Starting force test sequence...")
@@ -366,11 +394,15 @@ class HardwareServiceFacade:
                 logger.info(f"Setting temperature to {temperature}C ({temp_idx + 1}/{len(test_config.temperature_list)})")
 
                 # Set MCU temperature
+                heating_started = asyncio.get_running_loop().time()
                 await self._mcu.set_operating_temperature(temperature)
                 await asyncio.sleep(test_config.mcu_command_stabilization)
 
                 # Verify temperature
                 await self.verify_mcu_temperature(temperature, test_config, abort_check)
+                await _fill_phase(
+                    heating_started, test_config.heating_phase_seconds, "Heating", abort_check
+                )
 
                 # Initialize measurements for this temperature
                 if repeat_idx == 0:
@@ -422,12 +454,16 @@ class HardwareServiceFacade:
                     self._robot_state = RobotState.INITIAL_POSITION
 
                 # Start standby cooling
+                cooling_started = asyncio.get_running_loop().time()
                 await self._mcu.start_standby_cooling()
                 await asyncio.sleep(test_config.mcu_command_stabilization)
 
                 # Verify standby temperature
                 await self.verify_mcu_temperature(
                     test_config.standby_temperature, test_config, abort_check
+                )
+                await _fill_phase(
+                    cooling_started, test_config.cooling_phase_seconds, "Cooling", abort_check
                 )
 
             # Create cycle result
@@ -446,6 +482,8 @@ class HardwareServiceFacade:
             )
             individual_cycle_results.append(cycle_result)
             logger.info(f"Cycle {repeat_idx + 1} completed: {cycle_duration.seconds:.2f}s")
+            if on_cycle_complete is not None:
+                await on_cycle_complete(cycle_result)
 
         logger.info("Force test sequence completed")
 

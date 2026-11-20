@@ -7,7 +7,7 @@ Self-contained standalone implementation supporting both mock and real hardware.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 from loguru import logger
 
@@ -184,6 +184,7 @@ class EOLHardwareAdapter:
         self,
         dut_info: "DUTCommandInfo",
         abort_check: Optional[Callable[[], None]] = None,
+        on_cycle_complete: Optional[Callable[["CycleResult"], Awaitable[None]]] = None,
     ) -> Tuple["TestMeasurements", List["CycleResult"]]:
         """
         Execute the force test sequence.
@@ -200,6 +201,7 @@ class EOLHardwareAdapter:
             self._hardware_config,
             dut_info,
             abort_check=abort_check,
+            on_cycle_complete=on_cycle_complete,
         )
         logger.info("EOLHardwareAdapter: Force test sequence completed")
         return measurements, cycle_results

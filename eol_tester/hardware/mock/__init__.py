@@ -122,6 +122,7 @@ class MockMCUService(MCUService):
         self,
         operating_temp: float,
         standby_temp: float,
+        hold_time_ms: int = 60000,
     ) -> None:
         self._target_temperature = operating_temp
         await asyncio.sleep(0.1)

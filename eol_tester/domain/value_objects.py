@@ -80,6 +80,9 @@ class TestConfiguration:
     poweron_stabilization: float = 0.5
     power_command_stabilization: float = 0.2
     loadcell_zero_delay: float = 0.1
+    heating_phase_seconds: float = 0.0
+    cooling_phase_seconds: float = 0.0
+    mcu_hold_time_ms: int = 60000
 
     # Measurement settings
     temperature_tolerance: float = 3.0
@@ -129,6 +132,9 @@ class TestConfiguration:
             "mcu_boot_complete_stabilization": self.mcu_boot_complete_stabilization,
             "poweron_stabilization": self.poweron_stabilization,
             "power_command_stabilization": self.power_command_stabilization,
+            "heating_phase_seconds": self.heating_phase_seconds,
+            "cooling_phase_seconds": self.cooling_phase_seconds,
+            "mcu_hold_time_ms": self.mcu_hold_time_ms,
             "temperature_tolerance": self.temperature_tolerance,
             "timeout_seconds": self.timeout_seconds,
             "repeat_count": self.repeat_count,
@@ -163,6 +169,9 @@ class TestConfiguration:
                 "loadcell_zero_delay": self.loadcell_zero_delay,
                 "mcu_command_stabilization": self.mcu_command_stabilization,
                 "mcu_boot_complete_stabilization": self.mcu_boot_complete_stabilization,
+                "heating_phase_seconds": self.heating_phase_seconds,
+                "cooling_phase_seconds": self.cooling_phase_seconds,
+                "mcu_hold_time_ms": self.mcu_hold_time_ms,
             },
             "test_parameters": {
                 "temperature_list": list(self.temperature_list),
